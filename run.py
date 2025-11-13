@@ -4,76 +4,167 @@ import os
 import sys
 import requests
 from datetime import datetime
-
-print("🔍 Démarrage du script...")
-
-from TwitchChannelPointsMiner import TwitchChannelPointsMiner
-from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
-from TwitchChannelPointsMiner.classes.Settings import Priority, Events
-from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
-from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition
+from threading import Thread
+import time
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
-auth_token = os.getenv("TWITCH_AUTH_TOKEN")
-streamers_list = os.getenv("STREAMERS", "")
-discord_webhook = os.getenv("DISCORD_WEBHOOK_URL", "")
+password = os.getenv("TWITCH_AUTH_TOKEN") 
+streamers = os.getenv("STREAMERS", "").split(",")
+WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
 
-if not username or not auth_token or not streamers_list:
-    print("❌ Variables manquantes")
+if not username or not password or not streamers:
+    print("❌ Configuration manquante")
     sys.exit(1)
 
-streamers = [s.strip() for s in streamers_list.split(",") if s.strip()]
-
-print("="*50)
-print("🎮 Twitch Channel Points Miner")
-print(f"👤 Username: {username}")
+print("🎮 Twitch Points Miner")
+print(f"👤 User: {username}")
 print(f"📺 Streamers: {', '.join(streamers)}")
-print(f"🔔 Discord: {'✅ Activé' if discord_webhook else '❌ Désactivé'}")
-print("="*50)
+print(f"🔔 Discord: {'✅' if WEBHOOK else '❌'}")
 
 # Fonction pour envoyer sur Discord
-def send_discord(title, description, color, fields=None):
-    if not discord_webhook:
+def send_discord(title, description, color):
+    if not WEBHOOK:
         return
-    
-    embed = {
-        "title": title,
-        "description": description,
-        "color": color,
-        "timestamp": datetime.utcnow().isoformat(),
-        "footer": {"text": "Twitch Points Miner"}
-    }
-    
-    if fields:
-        embed["fields"] = fields
-    
     try:
-        response = requests.post(
-            discord_webhook,
-            json={"embeds": [embed]},
-            timeout=5
-        )
-    except Exception as e:
-        print(f"❌ Discord error: {e}")
+        requests.post(WEBHOOK, json={
+            "embeds": [{
+                "title": title,
+                "description": description[:2000],
+                "color": color,
+                "timestamp": datetime.utcnow().isoformat(),
+                "footer": {"text": "Twitch Miner"}
+            }]
+        }, timeout=5)
+    except:
+        pass
 
 # Notification de démarrage
-if discord_webhook:
+if WEBHOOK:
     send_discord(
         "🚀 Bot Démarré",
-        f"Mining pour **{username}**",
-        0x00FF00,
-        [{"name": "📺 Streamers", "value": ", ".join(streamers), "inline": False}]
+        f"Mining pour **{username}**\nStreamers: {', '.join(streamers)}",
+        0x00FF00
     )
 
-# Configuration du TwitchChannelPointsMiner
+# Handler personnalisé pour intercepter les logs
+class DiscordLogHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.last_messages = {}
+        
+    def emit(self, record):
+        try:
+            msg = record.getMessage()
+            
+            # Anti-spam : pas le même message dans les 30s
+            msg_key = msg[:50]
+            now = time.time()
+            if msg_key in self.last_messages:
+                if now - self.last_messages[msg_key] < 30:
+                    return
+            self.last_messages[msg_key] = now
+            
+            # Parser les messages importants
+            # Streamer ONLINE
+            if "goes ONLINE" in msg or "is ONLINE" in msg:
+                import re
+                match = re.search(r'\[(\w+)\].*?ONLINE', msg)
+                if match:
+                    streamer = match.group(1)
+                    send_discord("🟢 En Ligne", f"**{streamer}** est en ligne !", 0x00FF00)
+                    print(f"🟢 {streamer} ONLINE")
+            
+            # Streamer OFFLINE
+            elif "goes OFFLINE" in msg or "is OFFLINE" in msg:
+                import re
+                match = re.search(r'\[(\w+)\].*?OFFLINE', msg)
+                if match:
+                    streamer = match.group(1)
+                    send_discord("🔴 Hors Ligne", f"**{streamer}** est hors ligne", 0xFF0000)
+                    print(f"🔴 {streamer} OFFLINE")
+            
+            # Points gagnés
+            elif "Earned" in msg and "points" in msg:
+                import re
+                match = re.search(r'Earned\s+(\d+)\s+points.*?\[(\w+)\]', msg)
+                if match:
+                    points = match.group(1)
+                    streamer = match.group(2)
+                    send_discord("💰 Points", f"**+{points}** points sur **{streamer}**", 0xFFD700)
+                    print(f"💰 +{points} points ({streamer})")
+            
+            # Bonus claim
+            elif "Claimed" in msg and "bonus" in msg:
+                import re
+                match = re.search(r'Claimed\s+(\d+).*?\[(\w+)\]', msg)
+                if match:
+                    points = match.group(1)
+                    streamer = match.group(2)
+                    send_discord("🎁 Bonus", f"**+{points}** bonus sur **{streamer}**", 0x9B59B6)
+                    print(f"🎁 +{points} bonus ({streamer})")
+            
+            # Prédiction placée
+            elif "Bet placed" in msg:
+                import re
+                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
+                if match:
+                    points = match.group(1)
+                    streamer = match.group(2)
+                    send_discord("🎲 Prédiction", f"**{points}** points pariés sur **{streamer}**", 0x3498DB)
+                    print(f"🎲 {points} pts pariés ({streamer})")
+            
+            # Prédiction gagnée
+            elif "won" in msg and ("bet" in msg.lower() or "prediction" in msg.lower()):
+                import re
+                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
+                if match:
+                    points = match.group(1)
+                    streamer = match.group(2)
+                    send_discord("🎉 Gagné", f"**+{points}** points gagnés sur **{streamer}**", 0x00FF00)
+                    print(f"🎉 +{points} pts gagnés ({streamer})")
+            
+            # Prédiction perdue
+            elif "lost" in msg and ("bet" in msg.lower() or "prediction" in msg.lower()):
+                import re
+                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
+                if match:
+                    points = match.group(1)
+                    streamer = match.group(2)
+                    send_discord("😢 Perdu", f"**-{points}** points perdus sur **{streamer}**", 0xFF0000)
+                    print(f"😢 -{points} pts perdus ({streamer})")
+            
+        except Exception as e:
+            pass
+
+# Configurer le handler AVANT l'import
+discord_handler = DiscordLogHandler()
+discord_handler.setLevel(logging.INFO)
+
+# Ajouter à tous les loggers possibles
+logging.getLogger().addHandler(discord_handler)
+logging.getLogger("TwitchChannelPointsMiner").addHandler(discord_handler)
+logging.getLogger("TwitchChannelPointsMiner.classes.Twitch").addHandler(discord_handler)
+logging.getLogger("TwitchChannelPointsMiner.classes.Bet").addHandler(discord_handler)
+
+# MAINTENANT importer le bot
+from TwitchChannelPointsMiner import TwitchChannelPointsMiner
+from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
+from TwitchChannelPointsMiner.classes.Settings import Priority
+from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
+from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
+
+print("🔧 Configuration du bot...")
+
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
-    password=auth_token,
+    password=password,
     claim_drops_startup=False,
-    priority=[Priority.STREAK, Priority.DROPS, Priority.ORDER],
-    enable_analytics=True,  # Activer les analytics
-    disable_ssl_cert_verification=False,
+    priority=[
+        Priority.STREAK,
+        Priority.DROPS,
+        Priority.ORDER
+    ],
     logger_settings=LoggerSettings(
         save=True,
         console_level=logging.INFO,
@@ -97,165 +188,21 @@ twitch_miner = TwitchChannelPointsMiner(
             percentage=5,
             percentage_gap=20,
             max_points=50000,
-            filter_condition=FilterCondition(
-                by=OutcomeKeys.TOTAL_USERS,
-                where=Condition.LTE,
-                value=800
-            )
         )
     )
 )
 
-# Handlers pour les événements
-def on_websocket_connected(ws):
-    print(f"✅ WebSocket connecté")
-
-def on_streamer_online(streamer):
-    streamer_name = streamer.username if hasattr(streamer, 'username') else str(streamer)
-    game = streamer.game if hasattr(streamer, 'game') else "En direct"
-    
-    print(f"🟢 {streamer_name} est EN LIGNE ({game})")
-    send_discord(
-        "🟢 Streamer En Ligne",
-        f"**{streamer_name}** est en ligne !",
-        0x00FF00,
-        [
-            {"name": "🎮 Jeu", "value": str(game)[:100], "inline": True},
-            {"name": "📺 Streamer", "value": streamer_name, "inline": True}
-        ]
-    )
-
-def on_streamer_offline(streamer):
-    streamer_name = streamer.username if hasattr(streamer, 'username') else str(streamer)
-    
-    print(f"🔴 {streamer_name} est HORS LIGNE")
-    send_discord(
-        "🔴 Streamer Hors Ligne",
-        f"**{streamer_name}** est hors ligne",
-        0xFF0000,
-        [{"name": "📺 Streamer", "value": streamer_name, "inline": True}]
-    )
-
-def on_minute_watched_event(event_data):
-    streamer = event_data.get("streamer", {})
-    earned = event_data.get("earned", 0)
-    
-    if earned > 0:
-        streamer_name = streamer.get("username", "Unknown")
-        print(f"💰 +{earned} points sur {streamer_name}")
-        send_discord(
-            "💰 Points Gagnés",
-            f"**+{earned}** points sur **{streamer_name}**",
-            0xFFD700,
-            [
-                {"name": "📝 Raison", "value": "Watch time", "inline": True},
-                {"name": "💰 Points", "value": f"+{earned}", "inline": True}
-            ]
-        )
-
-def on_community_points_claimed(event_data):
-    streamer = event_data.get("streamer", {})
-    points = event_data.get("claimed_points", 0)
-    
-    streamer_name = streamer.get("username", "Unknown")
-    print(f"🎁 +{points} bonus sur {streamer_name}")
-    send_discord(
-        "🎁 Bonus Réclamé",
-        f"**+{points}** points bonus !",
-        0x9B59B6,
-        [
-            {"name": "📺 Streamer", "value": streamer_name, "inline": True},
-            {"name": "💰 Points", "value": f"+{points}", "inline": True}
-        ]
-    )
-
-def on_drop_claimed(drop):
-    drop_name = drop.name if hasattr(drop, 'name') else "Drop"
-    
-    print(f"🎁 Drop réclamé: {drop_name}")
-    send_discord(
-        "🎁 Drop Réclamé",
-        f"Drop réclamé: **{drop_name}**",
-        0x9B59B6
-    )
-
-def on_bet_placed(event_data):
-    streamer = event_data.get("streamer", {})
-    bet = event_data.get("bet", {})
-    
-    streamer_name = streamer.get("username", "Unknown")
-    amount = bet.get("amount", 0)
-    
-    print(f"🎲 Prédiction placée: {amount} points sur {streamer_name}")
-    send_discord(
-        "🎲 Prédiction Placée",
-        f"Pari sur **{streamer_name}**",
-        0x3498DB,
-        [{"name": "💰 Mise", "value": f"{amount} pts", "inline": True}]
-    )
-
-def on_bet_result(event_data):
-    won = event_data.get("won", False)
-    bet = event_data.get("bet", {})
-    streamer = event_data.get("streamer", {})
-    
-    streamer_name = streamer.get("username", "Unknown")
-    amount = bet.get("amount", 0)
-    
-    if won:
-        profit = bet.get("profit", amount)
-        print(f"🎉 Prédiction GAGNÉE: +{profit} pts ({streamer_name})")
-        send_discord(
-            "🎉 Prédiction Gagnée !",
-            f"**+{profit}** points gagnés",
-            0x00FF00,
-            [
-                {"name": "📺 Streamer", "value": streamer_name, "inline": True},
-                {"name": "🏆 Gain", "value": f"+{profit} pts", "inline": True}
-            ]
-        )
-    else:
-        print(f"😢 Prédiction PERDUE: -{amount} pts ({streamer_name})")
-        send_discord(
-            "😢 Prédiction Perdue",
-            f"**-{amount}** points perdus",
-            0xFF0000,
-            [
-                {"name": "📺 Streamer", "value": streamer_name, "inline": True},
-                {"name": "💸 Perte", "value": f"-{amount} pts", "inline": True}
-            ]
-        )
-
-def on_raid_update(raid):
-    print(f"🎯 Raid update: {raid}")
-
-# Enregistrer les handlers d'événements
-twitch_miner.events_manager.on(Events.on_websocket_connected, on_websocket_connected)
-twitch_miner.events_manager.on(Events.on_streamer_online, on_streamer_online)
-twitch_miner.events_manager.on(Events.on_streamer_offline, on_streamer_offline)
-twitch_miner.events_manager.on(Events.on_minute_watched_event, on_minute_watched_event)
-twitch_miner.events_manager.on(Events.on_community_points_claimed, on_community_points_claimed)
-twitch_miner.events_manager.on(Events.on_drop_claimed, on_drop_claimed)
-twitch_miner.events_manager.on(Events.on_bet_placed, on_bet_placed)
-twitch_miner.events_manager.on(Events.on_bet_result, on_bet_result)
-twitch_miner.events_manager.on(Events.on_raid_update, on_raid_update)
-
-print("✅ Event handlers configurés")
-
-# Créer les objets Streamer
-streamer_objects = [Streamer(name) for name in streamers]
-
 print("🚀 Démarrage du mining...")
 
+# Miner
 try:
-    twitch_miner.mine(streamer_objects, followers=False)
+    twitch_miner.mine([Streamer(s.strip()) for s in streamers])
 except KeyboardInterrupt:
-    print("\n⏹️  Arrêt du bot...")
-    if discord_webhook:
-        send_discord("⏹️ Bot Arrêté", f"Mining arrêté pour **{username}**", 0xFF0000)
+    print("\n⏹️ Arrêt...")
+    if WEBHOOK:
+        send_discord("⏹️ Arrêt", f"Bot arrêté pour **{username}**", 0xFF0000)
 except Exception as e:
-    error_msg = str(e)[:500]
-    print(f"❌ Erreur: {error_msg}")
-    if discord_webhook:
-        send_discord("⚠️ Erreur", f"```{error_msg}```", 0xFF0000)
+    print(f"❌ Erreur: {e}")
+    if WEBHOOK:
+        send_discord("❌ Erreur", str(e)[:500], 0xFF0000)
     raise
