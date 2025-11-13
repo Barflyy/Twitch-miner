@@ -5,7 +5,8 @@ from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings,
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
 
 twitch_miner = TwitchChannelPointsMiner(
-    username="VOTRE_USERNAME_TWITCH",
+    username="barflyy_",
+    password="tyqqyuvcmm7r670i5bnil3rw580n8d",  # Le token copié
     claim_drops_startup=False,
     priority=[
         # Liste des streamers à miner
