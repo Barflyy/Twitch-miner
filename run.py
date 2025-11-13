@@ -4,13 +4,10 @@ import os
 import sys
 import time
 
-print("🔍 Démarrage du script...")
-print(f"📂 Répertoire: {os.getcwd()}")
-print(f"📁 Fichiers: {os.listdir('.')}")
+print("🔍 Démarrage du bot...")
 
-# Créer le dossier logs s'il n'existe pas
+# Créer dossier logs
 os.makedirs("logs", exist_ok=True)
-print(f"📋 Dossier logs créé/vérifié")
 
 from log_watcher import LogWatcher
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
@@ -25,19 +22,15 @@ auth_token = os.getenv("TWITCH_AUTH_TOKEN")
 streamers_list = os.getenv("STREAMERS", "")
 
 if not username or not auth_token or not streamers_list:
-    print("❌ Variables manquantes")
+    print("❌ Configuration manquante")
     sys.exit(1)
 
 streamers = [s.strip() for s in streamers_list.split(",") if s.strip()]
 
-print("="*50)
-print("🎮 Twitch Channel Points Miner")
-print("="*50)
-print(f"👤 Username: {username}")
+print(f"👤 User: {username}")
 print(f"📺 Streamers: {', '.join(streamers)}")
-print("="*50)
 
-# Démarrer le watcher
+# Démarrer monitoring Discord
 watcher = LogWatcher()
 watcher.start()
 
@@ -45,18 +38,16 @@ watcher.start()
 if watcher.enabled:
     watcher.send_discord(
         "🚀 Bot Démarré",
-        f"Mining démarré pour **{username}**",
+        f"Mining pour **{username}**",
         0x00FF00,
         [
-            {"name": "📺 Streamers suivis", "value": ", ".join(streamers[:5]), "inline": False},
-            {"name": "📈 Nombre total", "value": str(len(streamers)), "inline": True}
+            {"name": "📺 Streamers", "value": ", ".join(streamers), "inline": False},
         ]
     )
 
-# Attendre que le watcher soit prêt
-time.sleep(3)
+time.sleep(2)
 
-# Configuration du miner avec VERBOSE logging
+# Configuration du miner
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=auth_token,
@@ -64,15 +55,14 @@ twitch_miner = TwitchChannelPointsMiner(
     priority=[Priority.STREAK, Priority.DROPS, Priority.ORDER],
     logger_settings=LoggerSettings(
         save=True,
-        less=False,  # IMPORTANT: Ne pas réduire les logs
-        console_level=logging.DEBUG,  # VERBOSE
-        file_level=logging.DEBUG,     # VERBOSE
+        less=False,
+        console_level=logging.INFO,  # INFO au lieu de DEBUG
+        file_level=logging.DEBUG,
         emoji=True,
         colored=True,
         color_palette=ColorPalette(
             STREAMER_online="GREEN",
             streamer_offline="red",
-            BET_wiped="YELLOW"
         ),
     ),
     streamer_settings=StreamerSettings(
@@ -89,20 +79,9 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Configurer le logging Python standard aussi
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/miner.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
 streamer_objects = [Streamer(name) for name in streamers]
 
-print("🚀 Démarrage du mining...")
-print("🔊 Mode VERBOSE activé")
+print("🚀 Mining démarré...")
 
 try:
     twitch_miner.mine(streamer_objects, followers=False)
@@ -111,7 +90,5 @@ except KeyboardInterrupt:
     watcher.stop()
 except Exception as e:
     print(f"❌ Erreur: {e}")
-    import traceback
-    traceback.print_exc()
     watcher.stop()
     raise

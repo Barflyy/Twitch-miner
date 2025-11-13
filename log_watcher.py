@@ -16,18 +16,27 @@ class LogWatcher:
         self.last_positions = {}
         self.points_tracker = defaultdict(int)
         self.online_streamers = set()
+        self.last_notifications = {}  # Pour éviter les doublons
+        self.min_points = 10  # Ignorer les gains < 10 points
         
         if self.enabled:
-            print("✅ Discord Log Watcher activé")
-            print(f"🔗 Webhook: {self.webhook_url[:50]}...")
+            print("✅ Discord notifications activées")
         else:
-            print("⚠️  DISCORD_WEBHOOK_URL non configuré")
+            print("⚠️  Discord désactivé")
     
     def send_discord(self, title, description, color, fields=None):
-        """Envoie un message sur Discord"""
+        """Envoie un message sur Discord avec anti-spam"""
         if not self.enabled:
-            print(f"⚠️  Webhook désactivé, message ignoré: {title}")
             return
+        
+        # Anti-spam : ne pas envoyer le même message 2 fois en 30s
+        cache_key = f"{title}:{description}"
+        now = time.time()
+        if cache_key in self.last_notifications:
+            if now - self.last_notifications[cache_key] < 30:
+                return  # Ignorer, trop récent
+        
+        self.last_notifications[cache_key] = now
         
         embed = {
             "title": title,
@@ -41,33 +50,27 @@ class LogWatcher:
             embed["fields"] = fields
         
         try:
-            print(f"📤 Envoi Discord: {title}")
             response = requests.post(
                 self.webhook_url,
                 json={"embeds": [embed]},
                 timeout=10
             )
             if response.status_code == 204:
-                print(f"✅ Discord envoyé: {title}")
-            else:
-                print(f"⚠️  Discord status: {response.status_code} - {response.text}")
+                print(f"✅ Discord: {title}")
         except Exception as e:
-            print(f"❌ Erreur Discord: {e}")
+            print(f"❌ Discord error: {e}")
     
     def start(self):
-        """Démarre le monitoring en arrière-plan"""
+        """Démarre le monitoring"""
         self.running = True
         
-        # Afficher info de démarrage
-        print("🔍 Recherche des fichiers de logs...")
-        print(f"📂 Dossier actuel: {os.getcwd()}")
-        print(f"📁 Contenu: {os.listdir('.')}")
+        # Ne pas afficher trop de debug
+        os.makedirs("logs", exist_ok=True)
         
-        # Thread pour les logs
         log_thread = Thread(target=self._watch_logs, daemon=True)
         log_thread.start()
         
-        print("🔔 Log watcher démarré")
+        print("🔔 Log monitoring démarré")
     
     def stop(self):
         self.running = False
@@ -76,179 +79,196 @@ class LogWatcher:
         """Monitore les fichiers de logs"""
         log_dirs = [
             Path("logs"),
-            Path("analytics"),
-            Path("."),
             Path("/app/logs"),
             Path("/usr/src/app/logs"),
         ]
-        
-        found_logs = False
         
         while self.running:
             try:
                 for log_dir in log_dirs:
                     if log_dir.exists():
-                        log_files = list(log_dir.glob("*.log")) + list(log_dir.glob("*.txt"))
-                        
-                        if log_files and not found_logs:
-                            print(f"📋 Logs trouvés dans {log_dir}: {[f.name for f in log_files]}")
-                            found_logs = True
-                        
-                        for log_file in log_files:
+                        for log_file in log_dir.glob("*.log"):
                             self._process_log_file(log_file)
                 
-                if not found_logs:
-                    # Première fois, afficher ce qu'on trouve
-                    print(f"🔍 Vérification des dossiers...")
-                    for log_dir in log_dirs:
-                        print(f"  - {log_dir}: {'✅ existe' if log_dir.exists() else '❌ introuvable'}")
-                        if log_dir.exists():
-                            contents = list(log_dir.iterdir())[:5]
-                            print(f"    Contenu: {[f.name for f in contents]}")
-                    found_logs = True  # Pour ne pas répéter
-                
-                time.sleep(5)  # Vérifier toutes les 5 secondes
+                time.sleep(5)
             except Exception as e:
-                print(f"❌ Erreur watch logs: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"❌ Log watcher error: {e}")
                 time.sleep(10)
     
     def _process_log_file(self, log_file):
-        """Traite un fichier de log ligne par ligne"""
+        """Traite un fichier de log"""
         try:
             file_key = str(log_file)
-            
-            # Obtenir la taille actuelle
             current_size = log_file.stat().st_size
             last_pos = self.last_positions.get(file_key, 0)
             
-            # Si le fichier a été tronqué, recommencer à 0
             if current_size < last_pos:
                 last_pos = 0
-                print(f"🔄 Fichier tronqué détecté: {log_file.name}")
             
-            # Si nouveau contenu
             if current_size > last_pos:
-                # Lire uniquement les nouvelles lignes
                 with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
                     f.seek(last_pos)
                     lines = f.readlines()
-                    new_pos = f.tell()
+                    self.last_positions[file_key] = f.tell()
                 
-                if lines:
-                    print(f"📄 {log_file.name}: {len(lines)} nouvelles lignes")
-                    self.last_positions[file_key] = new_pos
-                
-                # Parser chaque nouvelle ligne
                 for line in lines:
                     self._parse_log_line(line)
                     
         except Exception as e:
-            print(f"❌ Erreur lecture {log_file.name}: {e}")
+            pass  # Ignorer les erreurs de lecture
     
     def _parse_log_line(self, line):
-        """Parse une ligne de log et déclenche les notifications"""
+        """Parse une ligne de log - VERSION FILTRÉE"""
         
-        # Supprimer les codes couleur ANSI
-        clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+        # Nettoyer la ligne
+        clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
         
-        # Afficher TOUTES les lignes pour debug
-        print(f"[LOG] {clean_line.strip()}")
+        # Ignorer les lignes vides et le bruit
+        if not clean_line or len(clean_line) < 10:
+            return
         
-        # 🟢 Streamer ONLINE
-        online_patterns = [
-            r'(\w+)\s+(?:is|goes|status:?)\s+online',
-            r'\[([^\]]+)\].*?online',
-            r'streaming.*?(\w+)',
-        ]
+        # Mots-clés à ignorer (bruit)
+        noise_keywords = ['set_online', 'choix', 'TRIVIAL', 'Stream', 'Unknown', 'DEBUG', 'function']
+        if any(keyword in clean_line for keyword in noise_keywords):
+            return
         
-        for pattern in online_patterns:
-            match = re.search(pattern, clean_line, re.IGNORECASE)
-            if match:
-                streamer = match.group(1).strip()
-                if streamer and len(streamer) > 2 and streamer not in self.online_streamers:
+        # 🟢 Streamer ONLINE - Pattern strict
+        online_match = re.search(r'\[(\w+)\].*?goes\s+ONLINE.*?Game:\s*(.+?)(?:\||$)', clean_line, re.IGNORECASE)
+        if online_match:
+            streamer = online_match.group(1).strip()
+            game = online_match.group(2).strip()
+            
+            # Vérifier que c'est un vrai nom de streamer (pas un mot-clé)
+            if len(streamer) > 2 and streamer.lower() not in ['info', 'debug', 'error', 'warning']:
+                if streamer not in self.online_streamers:
                     self.online_streamers.add(streamer)
                     
-                    game = "En direct"
-                    game_match = re.search(r'(?:game|playing):\s*([^|\n]+)', clean_line, re.IGNORECASE)
-                    if game_match:
-                        game = game_match.group(1).strip()
-                    
-                    print(f"🟢 DÉTECTÉ: {streamer} ONLINE ({game})")
                     self.send_discord(
                         "🟢 Streamer En Ligne",
-                        f"**{streamer}** vient de passer en ligne !",
+                        f"**{streamer}** a démarré son stream !",
                         0x00FF00,
                         [
-                            {"name": "🎮 Jeu", "value": game, "inline": True},
+                            {"name": "🎮 Jeu", "value": game[:100], "inline": True},
                             {"name": "📺 Streamer", "value": streamer, "inline": True}
                         ]
                     )
-                    break
+                    return
         
-        # 🔴 Streamer OFFLINE
-        offline_patterns = [
-            r'(\w+)\s+(?:is|goes|status:?)\s+offline',
-            r'\[([^\]]+)\].*?offline',
-        ]
-        
-        for pattern in offline_patterns:
-            match = re.search(pattern, clean_line, re.IGNORECASE)
-            if match:
-                streamer = match.group(1).strip()
-                if streamer and streamer in self.online_streamers:
-                    self.online_streamers.discard(streamer)
-                    
-                    print(f"🔴 DÉTECTÉ: {streamer} OFFLINE")
-                    self.send_discord(
-                        "🔴 Streamer Hors Ligne",
-                        f"**{streamer}** a terminé son stream",
-                        0xFF0000,
-                        [{"name": "📺 Streamer", "value": streamer, "inline": True}]
-                    )
-                    break
-        
-        # 💰 Points (pattern très large)
-        if "point" in clean_line.lower():
-            print(f"💡 Ligne avec 'point': {clean_line.strip()}")
+        # 🔴 Streamer OFFLINE - Pattern strict
+        offline_match = re.search(r'\[(\w+)\].*?goes\s+OFFLINE', clean_line, re.IGNORECASE)
+        if offline_match:
+            streamer = offline_match.group(1).strip()
             
-            # Tous les patterns possibles
-            points_patterns = [
-                r'\+(\d+)\s*points?',  # +10 points
-                r'earned?\s+(\d+)',     # earned 10
-                r'gained?\s+(\d+)',     # gained 10
-                r'claim.*?(\d+)',       # claim 10
-            ]
+            if streamer in self.online_streamers:
+                self.online_streamers.discard(streamer)
+                
+                self.send_discord(
+                    "🔴 Streamer Hors Ligne",
+                    f"**{streamer}** a terminé son stream",
+                    0xFF0000,
+                    [{"name": "📺 Streamer", "value": streamer, "inline": True}]
+                )
+                return
+        
+        # 💰 Points gagnés - Pattern strict (watch time)
+        # Format attendu: "Earned X points watching Y" ou "+X points for Y"
+        points_watch = re.search(r'(?:Earned|gained)\s+(\d+)\s+points?\s+(?:watching|for)\s+(\w+)', clean_line, re.IGNORECASE)
+        if points_watch:
+            points = int(points_watch.group(1))
+            streamer = points_watch.group(2).strip()
             
-            for pattern in points_patterns:
-                match = re.search(pattern, clean_line, re.IGNORECASE)
-                if match:
-                    points = int(match.group(1))
-                    
-                    # Trouver le streamer
-                    streamer = "Unknown"
-                    streamer_match = re.search(r'(?:for|from|on|watching)\s+(\w+)', clean_line, re.IGNORECASE)
-                    if streamer_match:
-                        streamer = streamer_match.group(1)
-                    
-                    # Raison
-                    reason = "Watch"
-                    if "bonus" in clean_line.lower():
-                        reason = "Bonus"
-                    elif "raid" in clean_line.lower():
-                        reason = "Raid"
-                    
-                    self.points_tracker[streamer] += points
-                    
-                    print(f"💰 DÉTECTÉ: +{points} points pour {streamer} ({reason})")
-                    self.send_discord(
-                        "💰 Points Gagnés",
-                        f"**+{points}** points sur **{streamer}**",
-                        0xFFD700,
-                        [
-                            {"name": "📝 Raison", "value": reason, "inline": True},
-                            {"name": "💎 Total", "value": f"{self.points_tracker[streamer]} pts", "inline": True}
-                        ]
-                    )
-                    break
+            # Filtrer les petits gains et les faux positifs
+            if points >= self.min_points and streamer.lower() not in ['info', 'debug', 'error']:
+                self.points_tracker[streamer] += points
+                
+                self.send_discord(
+                    "💰 Points Gagnés",
+                    f"**+{points}** points sur **{streamer}**",
+                    0xFFD700,
+                    [
+                        {"name": "📝 Raison", "value": "Watch", "inline": True},
+                        {"name": "💎 Total", "value": f"{self.points_tracker[streamer]:,} pts", "inline": True}
+                    ]
+                )
+                return
+        
+        # 🎁 Bonus claim - Pattern strict
+        # Format: "Claimed X bonus points on Y"
+        bonus_match = re.search(r'Claimed?\s+(\d+)\s+bonus\s+points?\s+(?:on|for)\s+(\w+)', clean_line, re.IGNORECASE)
+        if bonus_match:
+            points = int(bonus_match.group(1))
+            streamer = bonus_match.group(2).strip()
+            
+            if points >= self.min_points and streamer.lower() not in ['info', 'debug']:
+                self.points_tracker[streamer] += points
+                
+                self.send_discord(
+                    "🎁 Bonus Réclamé",
+                    f"**+{points}** points bonus !",
+                    0x9B59B6,
+                    [
+                        {"name": "📺 Streamer", "value": streamer, "inline": True},
+                        {"name": "💰 Points", "value": f"+{points:,}", "inline": True}
+                    ]
+                )
+                return
+        
+        # 🎲 Prédiction placée
+        # Format: "Placed X points on Y for streamer Z"
+        bet_match = re.search(r'Placed\s+(\d+)\s+points?\s+on\s+(.+?)\s+for\s+(\w+)', clean_line, re.IGNORECASE)
+        if bet_match:
+            points = int(bet_match.group(1))
+            choice = bet_match.group(2).strip()
+            streamer = bet_match.group(3).strip()
+            
+            if points >= 10 and len(choice) > 3:
+                self.send_discord(
+                    "🎲 Prédiction Placée",
+                    f"Pari sur **{streamer}**",
+                    0x3498DB,
+                    [
+                        {"name": "✅ Choix", "value": choice[:50], "inline": True},
+                        {"name": "💰 Mise", "value": f"{points:,} pts", "inline": True}
+                    ]
+                )
+                return
+        
+        # 🎉 Prédiction gagnée
+        # Format: "Won X points from prediction on Y"
+        won_match = re.search(r'Won\s+(\d+)\s+points?\s+(?:from\s+)?(?:prediction\s+)?(?:on|for)\s+(\w+)', clean_line, re.IGNORECASE)
+        if won_match:
+            points = int(won_match.group(1))
+            streamer = won_match.group(2).strip()
+            
+            if points >= 10:
+                self.points_tracker[streamer] += points
+                
+                self.send_discord(
+                    "🎉 Prédiction Gagnée !",
+                    f"Bravo ! **+{points:,}** points gagnés",
+                    0x00FF00,
+                    [
+                        {"name": "📺 Streamer", "value": streamer, "inline": True},
+                        {"name": "🏆 Gain", "value": f"+{points:,} pts", "inline": True}
+                    ]
+                )
+                return
+        
+        # 😢 Prédiction perdue
+        # Format: "Lost X points on prediction for Y"
+        lost_match = re.search(r'Lost\s+(\d+)\s+points?\s+(?:on\s+)?(?:prediction\s+)?(?:for|on)\s+(\w+)', clean_line, re.IGNORECASE)
+        if lost_match:
+            points = int(lost_match.group(1))
+            streamer = lost_match.group(2).strip()
+            
+            if points >= 10:
+                self.send_discord(
+                    "😢 Prédiction Perdue",
+                    f"Dommage... **-{points:,}** points",
+                    0xFF0000,
+                    [
+                        {"name": "📺 Streamer", "value": streamer, "inline": True},
+                        {"name": "💸 Perte", "value": f"-{points:,} pts", "inline": True}
+                    ]
+                )
+                return
