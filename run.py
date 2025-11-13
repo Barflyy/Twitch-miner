@@ -10,19 +10,27 @@ import time
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
 password = os.getenv("TWITCH_AUTH_TOKEN") 
-streamers = os.getenv("STREAMERS", "").split(",")
+streamers_list = os.getenv("STREAMERS", "")
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
+USE_FOLLOWERS = os.getenv("USE_FOLLOWERS", "true").lower() == "true"
 
-if not username or not password or not streamers:
+if not username or not password:
     print("❌ Configuration manquante")
     sys.exit(1)
 
+# Parser les streamers ou utiliser followers
+if USE_FOLLOWERS:
+    streamers = []  # Vide = utiliser tous les followers
+    print("📺 Mode: TOUS LES FOLLOWERS")
+else:
+    streamers = [s.strip() for s in streamers_list.split(",") if s.strip()]
+    print(f"📺 Streamers spécifiques: {', '.join(streamers)}")
+
 print("🎮 Twitch Points Miner")
 print(f"👤 User: {username}")
-print(f"📺 Streamers: {', '.join(streamers)}")
 print(f"🔔 Discord: {'✅' if WEBHOOK else '❌'}")
 
-# Fonction pour envoyer sur Discord
+# Fonction Discord
 def send_discord(title, description, color):
     if not WEBHOOK:
         return
@@ -41,13 +49,14 @@ def send_discord(title, description, color):
 
 # Notification de démarrage
 if WEBHOOK:
+    mode_text = "🌟 **TOUS LES FOLLOWERS**" if USE_FOLLOWERS else f"Streamers: {', '.join(streamers)}"
     send_discord(
         "🚀 Bot Démarré",
-        f"Mining pour **{username}**\nStreamers: {', '.join(streamers)}",
+        f"Mining pour **{username}**\n{mode_text}",
         0x00FF00
     )
 
-# Handler personnalisé pour intercepter les logs
+# Handler Discord pour les logs
 class DiscordLogHandler(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -57,7 +66,7 @@ class DiscordLogHandler(logging.Handler):
         try:
             msg = record.getMessage()
             
-            # Anti-spam : pas le même message dans les 30s
+            # Anti-spam
             msg_key = msg[:50]
             now = time.time()
             if msg_key in self.last_messages:
@@ -65,8 +74,7 @@ class DiscordLogHandler(logging.Handler):
                     return
             self.last_messages[msg_key] = now
             
-            # Parser les messages importants
-            # Streamer ONLINE
+            # Parser les messages
             if "goes ONLINE" in msg or "is ONLINE" in msg:
                 import re
                 match = re.search(r'\[(\w+)\].*?ONLINE', msg)
@@ -75,7 +83,6 @@ class DiscordLogHandler(logging.Handler):
                     send_discord("🟢 En Ligne", f"**{streamer}** est en ligne !", 0x00FF00)
                     print(f"🟢 {streamer} ONLINE")
             
-            # Streamer OFFLINE
             elif "goes OFFLINE" in msg or "is OFFLINE" in msg:
                 import re
                 match = re.search(r'\[(\w+)\].*?OFFLINE', msg)
@@ -84,7 +91,6 @@ class DiscordLogHandler(logging.Handler):
                     send_discord("🔴 Hors Ligne", f"**{streamer}** est hors ligne", 0xFF0000)
                     print(f"🔴 {streamer} OFFLINE")
             
-            # Points gagnés
             elif "Earned" in msg and "points" in msg:
                 import re
                 match = re.search(r'Earned\s+(\d+)\s+points.*?\[(\w+)\]', msg)
@@ -94,7 +100,6 @@ class DiscordLogHandler(logging.Handler):
                     send_discord("💰 Points", f"**+{points}** points sur **{streamer}**", 0xFFD700)
                     print(f"💰 +{points} points ({streamer})")
             
-            # Bonus claim
             elif "Claimed" in msg and "bonus" in msg:
                 import re
                 match = re.search(r'Claimed\s+(\d+).*?\[(\w+)\]', msg)
@@ -104,66 +109,34 @@ class DiscordLogHandler(logging.Handler):
                     send_discord("🎁 Bonus", f"**+{points}** bonus sur **{streamer}**", 0x9B59B6)
                     print(f"🎁 +{points} bonus ({streamer})")
             
-            # Prédiction placée
-            elif "Bet placed" in msg:
-                import re
-                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
-                if match:
-                    points = match.group(1)
-                    streamer = match.group(2)
-                    send_discord("🎲 Prédiction", f"**{points}** points pariés sur **{streamer}**", 0x3498DB)
-                    print(f"🎲 {points} pts pariés ({streamer})")
-            
-            # Prédiction gagnée
-            elif "won" in msg and ("bet" in msg.lower() or "prediction" in msg.lower()):
-                import re
-                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
-                if match:
-                    points = match.group(1)
-                    streamer = match.group(2)
-                    send_discord("🎉 Gagné", f"**+{points}** points gagnés sur **{streamer}**", 0x00FF00)
-                    print(f"🎉 +{points} pts gagnés ({streamer})")
-            
-            # Prédiction perdue
-            elif "lost" in msg and ("bet" in msg.lower() or "prediction" in msg.lower()):
-                import re
-                match = re.search(r'(\d+).*?\[(\w+)\]', msg)
-                if match:
-                    points = match.group(1)
-                    streamer = match.group(2)
-                    send_discord("😢 Perdu", f"**-{points}** points perdus sur **{streamer}**", 0xFF0000)
-                    print(f"😢 -{points} pts perdus ({streamer})")
-            
-        except Exception as e:
+        except Exception:
             pass
 
-# Configurer le handler AVANT l'import
+# Configurer le handler
 discord_handler = DiscordLogHandler()
 discord_handler.setLevel(logging.INFO)
-
-# Ajouter à tous les loggers possibles
 logging.getLogger().addHandler(discord_handler)
 logging.getLogger("TwitchChannelPointsMiner").addHandler(discord_handler)
-logging.getLogger("TwitchChannelPointsMiner.classes.Twitch").addHandler(discord_handler)
-logging.getLogger("TwitchChannelPointsMiner.classes.Bet").addHandler(discord_handler)
 
-# MAINTENANT importer le bot
+# Importer le bot
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
 from TwitchChannelPointsMiner.classes.Settings import Priority
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
-from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
+from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition
 
 print("🔧 Configuration du bot...")
 
+# Configuration avec priorités optimisées
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=password,
     claim_drops_startup=False,
+    # Priorités pour followers
     priority=[
-        Priority.STREAK,
-        Priority.DROPS,
-        Priority.ORDER
+        Priority.STREAK,        # Maintenir les streaks
+        Priority.DROPS,         # Récupérer les drops
+        Priority.ORDER          # Ordre de la liste/followers
     ],
     logger_settings=LoggerSettings(
         save=True,
@@ -185,18 +158,37 @@ twitch_miner = TwitchChannelPointsMiner(
         watch_streak=True,
         bet=BetSettings(
             strategy=Strategy.SMART,
-            percentage=5,
-            percentage_gap=20,
-            max_points=50000,
+            percentage=5,                     # Parier 5% des points
+            percentage_gap=20,                 # Écart de 20% minimum
+            max_points=50000,                  # Maximum 50k points par pari
+            filter_condition=FilterCondition(
+                by=OutcomeKeys.TOTAL_USERS,
+                where=Condition.LTE,
+                value=800                      # Seulement si moins de 800 votants
+            )
         )
     )
 )
 
 print("🚀 Démarrage du mining...")
 
-# Miner
 try:
-    twitch_miner.mine([Streamer(s.strip()) for s in streamers])
+    if USE_FOLLOWERS:
+        # ⭐ UTILISER TOUS LES FOLLOWERS
+        print("📋 Récupération de tous les followers...")
+        twitch_miner.mine(
+            [],                    # Liste vide = utiliser les followers
+            followers=True,        # ⭐ ACTIVER LE MODE FOLLOWERS
+            blacklist=[],          # Optionnel : blacklist de streamers à ignorer
+        )
+    else:
+        # Utiliser la liste spécifique
+        streamer_objects = [Streamer(s) for s in streamers]
+        twitch_miner.mine(
+            streamer_objects,
+            followers=False        # Mode normal
+        )
+        
 except KeyboardInterrupt:
     print("\n⏹️ Arrêt...")
     if WEBHOOK:
