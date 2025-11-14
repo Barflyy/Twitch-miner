@@ -8,6 +8,7 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
+import aiohttp
 
 # Configuration
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -38,6 +39,14 @@ stats_message_id = None  # ID du message de stats
 bot_start_time = None  # Heure de démarrage du bot
 channels_index = {}  # Index des canaux {streamer_name: channel} pour recherche rapide
 channels_index_loaded = False  # Flag pour savoir si l'index est chargé
+# Salons de statistiques détaillées
+online_count_channel_id = None  # ID du salon "streams en ligne"
+offline_count_channel_id = None  # ID du salon "streams hors ligne"
+followers_count_channel_id = None  # ID du salon "followers Barflyy_"
+online_count_message_id = None  # ID du message dans le salon "streams en ligne"
+offline_count_message_id = None  # ID du message dans le salon "streams hors ligne"
+followers_count_message_id = None  # ID du message dans le salon "followers Barflyy_"
+TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
 
 def load_data(force=False):
     """Charge les données depuis le fichier JSON avec cache"""
@@ -70,7 +79,13 @@ def save_channels():
             'messages': streamer_messages,
             'category_channels': category_channels,
             'stats_channel_id': stats_channel_id,
-            'stats_message_id': stats_message_id
+            'stats_message_id': stats_message_id,
+            'online_count_channel_id': online_count_channel_id,
+            'offline_count_channel_id': offline_count_channel_id,
+            'followers_count_channel_id': followers_count_channel_id,
+            'online_count_message_id': online_count_message_id,
+            'offline_count_message_id': offline_count_message_id,
+            'followers_count_message_id': followers_count_message_id
         }
         with open('streamer_channels.json', 'w') as f:
             json.dump(data, f)
@@ -80,6 +95,8 @@ def save_channels():
 def load_channels():
     """Charge les IDs des salons streamers"""
     global streamer_channels, streamer_messages, category_channels, stats_channel_id, stats_message_id
+    global online_count_channel_id, offline_count_channel_id, followers_count_channel_id
+    global online_count_message_id, offline_count_message_id, followers_count_message_id
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
@@ -89,6 +106,12 @@ def load_channels():
                 category_channels = data.get('category_channels', {})
                 stats_channel_id = data.get('stats_channel_id')
                 stats_message_id = data.get('stats_message_id')
+                online_count_channel_id = data.get('online_count_channel_id')
+                offline_count_channel_id = data.get('offline_count_channel_id')
+                followers_count_channel_id = data.get('followers_count_channel_id')
+                online_count_message_id = data.get('online_count_message_id')
+                offline_count_message_id = data.get('offline_count_message_id')
+                followers_count_message_id = data.get('followers_count_message_id')
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
         streamer_channels = {}
@@ -96,6 +119,12 @@ def load_channels():
         category_channels = {}
         stats_channel_id = None
         stats_message_id = None
+        online_count_channel_id = None
+        offline_count_channel_id = None
+        followers_count_channel_id = None
+        online_count_message_id = None
+        offline_count_message_id = None
+        followers_count_message_id = None
 
 def create_streamer_embed(streamer: str) -> discord.Embed:
     """Crée un embed pour un streamer"""
@@ -361,6 +390,200 @@ async def update_stats_channel(guild):
             
     except Exception as e:
         print(f"❌ Erreur update_stats_channel: {e}")
+        import traceback
+        traceback.print_exc()
+
+async def get_twitch_followers_count(username: str) -> int:
+    """Récupère le nombre de followers d'un utilisateur Twitch via l'API GraphQL publique"""
+    try:
+        # Utiliser l'API GraphQL publique de Twitch
+        async with aiohttp.ClientSession() as session:
+            gql_url = "https://gql.twitch.tv/gql"
+            headers = {
+                "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko"  # Client ID public de Twitch
+            }
+            gql_payload = {
+                "query": """
+                query($login: String!) {
+                    user(login: $login) {
+                        followers {
+                            totalCount
+                        }
+                    }
+                }
+                """,
+                "variables": {"login": username}
+            }
+            async with session.post(gql_url, json=gql_payload, headers=headers) as gql_response:
+                if gql_response.status == 200:
+                    gql_data = await gql_response.json()
+                    if "data" in gql_data and "user" in gql_data["data"]:
+                        if gql_data["data"]["user"] and "followers" in gql_data["data"]["user"]:
+                            return gql_data["data"]["user"]["followers"].get("totalCount", 0)
+        return 0
+    except Exception as e:
+        print(f"❌ Erreur récupération followers pour {username}: {e}")
+        return 0
+
+async def update_stats_channels(guild):
+    """Crée ou met à jour les 3 salons de statistiques détaillées"""
+    global online_count_channel_id, offline_count_channel_id, followers_count_channel_id
+    global online_count_message_id, offline_count_message_id, followers_count_message_id
+    
+    try:
+        stats_category = guild.get_channel(STATS_CATEGORY_ID)
+        if not stats_category or not isinstance(stats_category, discord.CategoryChannel):
+            print(f"⚠️  Catégorie stats {STATS_CATEGORY_ID} introuvable")
+            return
+        
+        # Recharger les données pour avoir les stats à jour
+        load_data()
+        
+        # Compter les streams en ligne/hors ligne
+        total_streamers = len(streamer_data)
+        online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
+        offline_streamers = total_streamers - online_streamers
+        
+        # Obtenir le nombre de followers
+        followers_count = await get_twitch_followers_count(TWITCH_USERNAME_TO_TRACK)
+        
+        # Salon 1: Streams en ligne
+        channel_name_online = "🟢-streams-en-ligne"
+        if not online_count_channel_id:
+            # Chercher si le salon existe déjà
+            existing_channel = None
+            for ch in stats_category.channels:
+                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_online:
+                    existing_channel = ch
+                    break
+            
+            if existing_channel:
+                online_count_channel_id = existing_channel.id
+                print(f"🔍 Salon existant trouvé: {channel_name_online}")
+            else:
+                channel = await guild.create_text_channel(
+                    name=channel_name_online,
+                    category=stats_category,
+                    position=1
+                )
+                online_count_channel_id = channel.id
+                print(f"✅ Salon créé: {channel_name_online}")
+                save_channels()
+        else:
+            channel = guild.get_channel(online_count_channel_id)
+            if not channel:
+                online_count_channel_id = None
+                online_count_message_id = None
+        
+        if online_count_channel_id:
+            channel = guild.get_channel(online_count_channel_id)
+            if channel:
+                # Créer ou mettre à jour le message
+                message_text = f"# 🟢 **{online_streamers}** streams en ligne"
+                if online_count_message_id:
+                    try:
+                        message = await channel.fetch_message(online_count_message_id)
+                        await message.edit(content=message_text)
+                    except discord.NotFound:
+                        message = await channel.send(message_text)
+                        online_count_message_id = message.id
+                        save_channels()
+                else:
+                    message = await channel.send(message_text)
+                    online_count_message_id = message.id
+                    save_channels()
+        
+        # Salon 2: Streams hors ligne
+        channel_name_offline = "🔴-streams-hors-ligne"
+        if not offline_count_channel_id:
+            existing_channel = None
+            for ch in stats_category.channels:
+                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_offline:
+                    existing_channel = ch
+                    break
+            
+            if existing_channel:
+                offline_count_channel_id = existing_channel.id
+                print(f"🔍 Salon existant trouvé: {channel_name_offline}")
+            else:
+                channel = await guild.create_text_channel(
+                    name=channel_name_offline,
+                    category=stats_category,
+                    position=2
+                )
+                offline_count_channel_id = channel.id
+                print(f"✅ Salon créé: {channel_name_offline}")
+                save_channels()
+        else:
+            channel = guild.get_channel(offline_count_channel_id)
+            if not channel:
+                offline_count_channel_id = None
+                offline_count_message_id = None
+        
+        if offline_count_channel_id:
+            channel = guild.get_channel(offline_count_channel_id)
+            if channel:
+                message_text = f"# 🔴 **{offline_streamers}** streams hors ligne"
+                if offline_count_message_id:
+                    try:
+                        message = await channel.fetch_message(offline_count_message_id)
+                        await message.edit(content=message_text)
+                    except discord.NotFound:
+                        message = await channel.send(message_text)
+                        offline_count_message_id = message.id
+                        save_channels()
+                else:
+                    message = await channel.send(message_text)
+                    offline_count_message_id = message.id
+                    save_channels()
+        
+        # Salon 3: Followers Barflyy_
+        channel_name_followers = f"👥-followers-{TWITCH_USERNAME_TO_TRACK.lower()}"
+        if not followers_count_channel_id:
+            existing_channel = None
+            for ch in stats_category.channels:
+                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_followers:
+                    existing_channel = ch
+                    break
+            
+            if existing_channel:
+                followers_count_channel_id = existing_channel.id
+                print(f"🔍 Salon existant trouvé: {channel_name_followers}")
+            else:
+                channel = await guild.create_text_channel(
+                    name=channel_name_followers,
+                    category=stats_category,
+                    position=3
+                )
+                followers_count_channel_id = channel.id
+                print(f"✅ Salon créé: {channel_name_followers}")
+                save_channels()
+        else:
+            channel = guild.get_channel(followers_count_channel_id)
+            if not channel:
+                followers_count_channel_id = None
+                followers_count_message_id = None
+        
+        if followers_count_channel_id:
+            channel = guild.get_channel(followers_count_channel_id)
+            if channel:
+                followers_display = f"{followers_count:,}".replace(',', ' ') if followers_count > 0 else "0"
+                message_text = f"# 👥 **{followers_display}** followers pour **{TWITCH_USERNAME_TO_TRACK}**"
+                if followers_count_message_id:
+                    try:
+                        message = await channel.fetch_message(followers_count_message_id)
+                        await message.edit(content=message_text)
+                    except discord.NotFound:
+                        message = await channel.send(message_text)
+                        followers_count_message_id = message.id
+                        save_channels()
+                else:
+                    message = await channel.send(message_text)
+                    followers_count_message_id = message.id
+                    save_channels()
+                    
+    except Exception as e:
+        print(f"❌ Erreur update_stats_channels: {e}")
         import traceback
         traceback.print_exc()
 
@@ -830,6 +1053,9 @@ async def update_channels():
         
         # Mettre à jour le salon de statistiques
         await update_stats_channel(guild)
+        
+        # Mettre à jour les salons de statistiques détaillées
+        await update_stats_channels(guild)
         
         # Log périodique
         if updates_count > 0:
