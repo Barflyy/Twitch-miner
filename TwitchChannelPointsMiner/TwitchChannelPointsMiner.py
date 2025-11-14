@@ -245,7 +245,8 @@ class TwitchChannelPointsMiner:
                     streamers_dict[username] = streamer
 
             if followers is True:
-                followers_array = self.twitch.get_followers(order=followers_order)
+                # Passer la blacklist pour filtrer lors du chargement du cache
+                followers_array = self.twitch.get_followers(order=followers_order, blacklist=blacklist)
                 logger.info(
                     f"Load {len(followers_array)} followers from your profile!",
                     extra={"emoji": ":clipboard:"},

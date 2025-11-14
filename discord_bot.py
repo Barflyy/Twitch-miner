@@ -46,6 +46,15 @@ online_count_message_id = None  # ID du message dans le salon "streams en ligne"
 followers_count_message_id = None  # ID du message dans le salon "followers Barflyy_"
 TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
 
+def get_cache_file_path():
+    """Retourne le chemin du fichier de cache (persiste sur Railway)"""
+    if os.getenv("RAILWAY_ENVIRONMENT"):
+        # Railway : sauvegarder dans le répertoire du projet (persiste entre déploiements)
+        return Path(os.path.join(Path().absolute(), ".followers_cache.json"))
+    else:
+        # Local : sauvegarder dans le dossier du projet
+        return Path("followers_cache.json")
+
 def load_data(force=False):
     """Charge les données depuis le fichier JSON avec cache"""
     global streamer_data, last_data_load
@@ -1544,7 +1553,7 @@ async def add_follow_command(ctx, streamer: str):
         import json
         import time
         
-        cache_file = Path("followers_cache.json")
+        cache_file = get_cache_file_path()
         if cache_file.exists():
             with open(cache_file, 'r') as f:
                 cache_data = json.load(f)
@@ -1578,7 +1587,7 @@ async def refresh_cache_command(ctx):
     
     try:
         from pathlib import Path
-        cache_file = Path("followers_cache.json")
+        cache_file = get_cache_file_path()
         
         if cache_file.exists():
             cache_file.unlink()
@@ -1830,7 +1839,7 @@ async def cleanup_inactive(ctx, days: int = 30, mode: str = "safe"):
                 json.dump(blacklist, f, indent=2)
             
             # Supprimer du cache des followers
-            cache_file = Path("followers_cache.json")
+            cache_file = get_cache_file_path()
             removed_from_cache = 0
             if cache_file.exists():
                 with open(cache_file, 'r') as f:

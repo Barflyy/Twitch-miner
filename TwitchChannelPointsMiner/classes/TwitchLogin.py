@@ -79,7 +79,8 @@ class TwitchLogin(object):
             "client_id": self.client_id,
             "scopes": (
                 "channel_read chat:read user_blocks_edit "
-                "user_blocks_read user_follows_edit user_read"
+                "user_blocks_read user_follows_edit user_read "
+                "channel:read:predictions channel:manage:predictions"
             )
         }
         # login-fix

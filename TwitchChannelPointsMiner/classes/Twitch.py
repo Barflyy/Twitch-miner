@@ -250,10 +250,17 @@ class Twitch(object):
             return json_response["data"]["user"]["id"]
 
     def get_followers(
-        self, limit: int = 100, order: FollowersOrder = FollowersOrder.ASC
+        self, limit: int = 100, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
         # 🚀 CACHE SYSTÈME : Évite de recharger 465+ followers à chaque redémarrage
-        cache_file = Path("followers_cache.json")
+        # Utiliser le même système de sauvegarde que les cookies (persiste sur Railway)
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            # Railway : sauvegarder dans le répertoire du projet (persiste entre déploiements)
+            cache_file = Path(os.path.join(Path().absolute(), ".followers_cache.json"))
+        else:
+            # Local : sauvegarder dans le dossier du projet
+            cache_file = Path("followers_cache.json")
+        
         cache_max_age = 6 * 3600  # 6 heures (modifiable : 1h = 3600, 12h = 43200, 24h = 86400)
         
         # Vérifier si le cache existe et est récent
@@ -267,6 +274,15 @@ class Twitch(object):
                 
                 if cache_age < cache_max_age:
                     follows = cache_data.get('followers', [])
+                    # Filtrer la blacklist lors du chargement du cache
+                    if blacklist:
+                        original_count = len(follows)
+                        follows = [f for f in follows if f.lower() not in [b.lower() for b in blacklist]]
+                        if original_count != len(follows):
+                            logger.info(
+                                f"🚫 {original_count - len(follows)} streamer(s) blacklisté(s) retiré(s) du cache",
+                                extra={"emoji": ":no_entry_sign:"}
+                            )
                     hours_old = cache_age / 3600
                     logger.info(
                         f"⚡ Cache utilisé : {len(follows)} followers (dernière mise à jour il y a {hours_old:.1f}h)",
@@ -316,7 +332,7 @@ class Twitch(object):
                         logger.error(f"❌ Twitch API Error: {error.get('message', 'Unknown error')}")
                 return []
         
-        # Sauvegarder le cache pour les prochains redémarrages
+        # Sauvegarder le cache pour les prochains redémarrages (persiste sur Railway)
         try:
             cache_data = {
                 'timestamp': time.time(),
@@ -326,7 +342,7 @@ class Twitch(object):
             with open(cache_file, 'w') as f:
                 json.dump(cache_data, f, indent=2)
             logger.info(
-                f"💾 Cache sauvegardé : {len(follows)} followers (valide 6h)",
+                f"💾 Cache sauvegardé : {len(follows)} followers (valide 6h) → {cache_file}",
                 extra={"emoji": ":floppy_disk:"}
             )
         except Exception as e:
@@ -848,14 +864,48 @@ class Twitch(object):
                         and "error" in response["data"]["makePrediction"]
                         and response["data"]["makePrediction"]["error"] is not None
                     ):
-                        error_code = response["data"]["makePrediction"]["error"]["code"]
-                        logger.error(
-                            f"Failed to place bet, error: {error_code}",
-                            extra={
-                                "emoji": ":four_leaf_clover:",
-                                "event": Events.BET_FAILED,
-                            },
+                        error_info = response["data"]["makePrediction"]["error"]
+                        error_code = error_info.get("code", "UNKNOWN")
+                        error_message = error_info.get("message", "")
+                        
+                        # Détecter les erreurs de blocage régional
+                        is_region_blocked = (
+                            "REGION" in str(error_code).upper()
+                            or "GEO" in str(error_code).upper()
+                            or "BLOCKED" in str(error_code).upper()
+                            or "region" in str(error_message).lower()
+                            or "blocked" in str(error_message).lower()
+                            or "geographic" in str(error_message).lower()
                         )
+                        
+                        if is_region_blocked:
+                            logger.error(
+                                f"❌ Blocage régional détecté pour les paris! Code: {error_code}, Message: {error_message}",
+                                extra={
+                                    "emoji": ":no_entry_sign:",
+                                    "event": Events.BET_FAILED,
+                                },
+                            )
+                            logger.warning(
+                                "💡 Solutions possibles:\n"
+                                "   1. Vérifiez que votre token OAuth contient les scopes:\n"
+                                "      - channel:read:predictions\n"
+                                "      - channel:manage:predictions\n"
+                                "   2. Les prédictions peuvent être bloquées dans votre région par Twitch\n"
+                                "   3. Vérifiez votre localisation et les restrictions géographiques",
+                                extra={
+                                    "emoji": ":bulb:",
+                                    "event": Events.BET_FAILED,
+                                },
+                            )
+                        else:
+                            logger.error(
+                                f"Failed to place bet, error code: {error_code}, message: {error_message}",
+                                extra={
+                                    "emoji": ":four_leaf_clover:",
+                                    "event": Events.BET_FAILED,
+                                },
+                            )
                 else:
                     logger.info(
                         f"Bet won't be placed as the amount {_millify(decision['amount'])} is less than the minimum required 10",
