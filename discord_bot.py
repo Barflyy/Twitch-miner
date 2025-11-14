@@ -73,10 +73,6 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
     watch_points = data.get('watch_points', 0)
     bonus_points = data.get('bonus_points', 0)
     
-    # Points totaux gagnés depuis le début
-    total_earned = data.get('total_earned', 0)
-    starting_balance = data.get('starting_balance', 0)
-    
     # Paris
     bets_placed = data.get('bets_placed', 0)
     bets_won = data.get('bets_won', 0)
@@ -92,14 +88,10 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
         timestamp=datetime.utcnow()
     )
     
-    # Solde avec gains totaux depuis le début
-    solde_text = f"**{balance_display}** points"
-    if total_earned > 0:
-        solde_text += f"\n🔼 **+{total_earned:,}** gagnés au total".replace(',', ' ')
-    
+    # Solde
     embed.add_field(
         name="💎 Solde",
-        value=solde_text,
+        value=f"**{balance_display}** points",
         inline=False
     )
     
@@ -183,7 +175,7 @@ async def on_ready():
 
 @tasks.loop(seconds=30)
 async def update_cards():
-    """Met à jour les fiches streamers toutes les 30 secondes"""
+    """Met à jour les fiches streamers - SEULEMENT les en ligne"""
     if not CHANNEL_ID or CHANNEL_ID == 0:
         return
     
@@ -195,8 +187,28 @@ async def update_cards():
         # Recharger les données
         load_data()
         
-        # Pour chaque streamer dans les données
-        for streamer in streamer_data.keys():
+        # Séparer les streamers en ligne et hors ligne
+        online_streamers = {s: d for s, d in streamer_data.items() if d.get('online', False)}
+        offline_streamers = {s: d for s, d in streamer_data.items() if not d.get('online', False)}
+        
+        # 1. Supprimer les fiches des streamers OFFLINE
+        for streamer in list(streamer_cards.keys()):
+            if streamer in offline_streamers or streamer not in streamer_data:
+                try:
+                    message = await channel.fetch_message(streamer_cards[streamer])
+                    await message.delete()
+                    print(f"🗑️  Fiche supprimée: {streamer} (offline)")
+                except discord.NotFound:
+                    pass  # Déjà supprimé
+                except Exception as e:
+                    print(f"⚠️  Erreur suppression {streamer}: {e}")
+                
+                # Retirer de la liste
+                del streamer_cards[streamer]
+                save_cards()
+        
+        # 2. Créer/Mettre à jour les fiches des streamers EN LIGNE
+        for streamer in online_streamers.keys():
             embed = create_streamer_embed(streamer)
             
             # Si la fiche existe, la mettre à jour
@@ -209,13 +221,15 @@ async def update_cards():
                     message = await channel.send(embed=embed)
                     streamer_cards[streamer] = message.id
                     save_cards()
+                    print(f"📝 Fiche recréée: {streamer}")
                 except Exception as e:
                     print(f"❌ Erreur update {streamer}: {e}")
             else:
-                # Créer une nouvelle fiche
+                # Créer une nouvelle fiche (streamer vient de passer en ligne)
                 message = await channel.send(embed=embed)
                 streamer_cards[streamer] = message.id
                 save_cards()
+                print(f"✅ Fiche créée: {streamer} (online)")
     
     except Exception as e:
         print(f"❌ Erreur update_cards: {e}")
@@ -226,18 +240,34 @@ async def before_update_cards():
 
 @bot.command(name='refresh')
 async def refresh_cards(ctx):
-    """Force la mise à jour des fiches"""
+    """Force la mise à jour des fiches (seulement streamers en ligne)"""
     # Supprimer la commande de l'utilisateur
     try:
         await ctx.message.delete()
     except:
         pass
     
-    await ctx.send("🔄 Mise à jour forcée...")
+    msg = await ctx.send("🔄 Mise à jour forcée...")
     
     load_data()
     
-    for streamer in streamer_data.keys():
+    # Séparer en ligne et hors ligne
+    online_streamers = {s: d for s, d in streamer_data.items() if d.get('online', False)}
+    offline_streamers = {s: d for s, d in streamer_data.items() if not d.get('online', False)}
+    
+    # Supprimer les fiches offline
+    for streamer in list(streamer_cards.keys()):
+        if streamer in offline_streamers or streamer not in streamer_data:
+            try:
+                message = await ctx.channel.fetch_message(streamer_cards[streamer])
+                await message.delete()
+            except:
+                pass
+            del streamer_cards[streamer]
+            save_cards()
+    
+    # Créer/Mettre à jour les fiches online
+    for streamer in online_streamers.keys():
         embed = create_streamer_embed(streamer)
         
         if streamer in streamer_cards:
@@ -253,7 +283,8 @@ async def refresh_cards(ctx):
             streamer_cards[streamer] = message.id
             save_cards()
     
-    await ctx.send("✅ Fiches mises à jour !")
+    await msg.edit(content=f"✅ Fiches mises à jour ! ({len(online_streamers)} en ligne)")
+    await msg.delete(delay=5)
 
 @bot.command(name='reset')
 async def reset_cards(ctx):
@@ -385,7 +416,7 @@ async def add_streamer(ctx, streamer: str):
         streamer_cards[streamer_lower] = message.id
         save_cards()
     
-    await ctx.send(f"✅ **{streamer}** ajouté ! Redémarrez le miner pour qu'il mine ce streamer.", delete_after=10)
+    await ctx.send(f"✅ **{streamer}** ajouté ! Le miner le prendra en compte au prochain redémarrage.", delete_after=10)
 
 @bot.command(name='remove')
 async def remove_streamer(ctx, streamer: str):
