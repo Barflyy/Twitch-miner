@@ -13,6 +13,16 @@ if not username or not auth_token:
     print("❌ Configuration manquante : TWITCH_USERNAME et TWITCH_AUTH_TOKEN requis")
     sys.exit(1)
 
+# Supprimer les cookies obsolètes au démarrage (évite ERR_BADAUTH)
+cookies_dir = Path("cookies")
+if cookies_dir.exists():
+    for cookie_file in cookies_dir.glob("*.pkl"):
+        try:
+            cookie_file.unlink()
+            print(f"🗑️ Cookie obsolète supprimé: {cookie_file.name}")
+        except Exception as e:
+            print(f"⚠️ Erreur suppression cookie {cookie_file.name}: {e}")
+
 # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
 # Blacklist optionnelle : streamers à exclure
 blacklist_file = Path("blacklist.json")

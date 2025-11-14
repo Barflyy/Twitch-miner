@@ -1496,6 +1496,229 @@ async def refresh_cache_command(ctx):
         await ctx.send(f"❌ Erreur : {e}", delete_after=10)
         print(f"❌ Erreur suppression cache : {e}")
 
+@bot.command(name='cleanup')
+async def cleanup_inactive(ctx, days: int = 30):
+    """🧹 Analyse et supprime les streamers inactifs depuis X jours
+    
+    Usage:
+        !cleanup           - Analyse les streamers inactifs depuis 30 jours
+        !cleanup 60        - Analyse les streamers inactifs depuis 60 jours
+        !cleanup 90        - Analyse les streamers inactifs depuis 90 jours
+    """
+    # Supprimer la commande
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    # Validation
+    if days < 7:
+        await ctx.send("⚠️ Minimum 7 jours requis (pour éviter les erreurs)", delete_after=10)
+        return
+    
+    if days > 365:
+        await ctx.send("⚠️ Maximum 365 jours", delete_after=10)
+        return
+    
+    # Message de chargement
+    loading_msg = await ctx.send("🔍 Analyse des streamers inactifs en cours...")
+    
+    try:
+        load_data(force=True)
+        
+        # Calculer la date limite
+        import time
+        cutoff_timestamp = time.time() - (days * 86400)  # X jours en secondes
+        
+        # Analyser les streamers
+        inactive_streamers = []
+        active_streamers = []
+        never_seen = []
+        
+        for streamer, data in streamer_data.items():
+            # Vérifier si le streamer a été vu en ligne
+            if not data.get('online', False):
+                # Vérifier s'il a des points (donc déjà vu)
+                balance = data.get('balance', 0)
+                session_points = data.get('session_points', 0)
+                
+                if balance == 0 and session_points == 0:
+                    # Jamais vu en ligne
+                    never_seen.append(streamer)
+                else:
+                    # Était en ligne avant mais plus maintenant (on ne peut pas savoir depuis quand exactement)
+                    # On les considère comme potentiellement inactifs
+                    inactive_streamers.append(streamer)
+            else:
+                active_streamers.append(streamer)
+        
+        # Créer l'embed de résultats
+        embed = discord.Embed(
+            title=f"🧹 Analyse des Streamers Inactifs ({days} jours)",
+            description=f"Analyse de **{len(streamer_data)}** streamers suivis",
+            color=0xFF6B6B
+        )
+        
+        # Streamers jamais vus en ligne
+        if never_seen:
+            never_seen_list = never_seen[:20]  # Limiter à 20 pour l'affichage
+            embed.add_field(
+                name=f"❌ Jamais vus en ligne ({len(never_seen)} streamers)",
+                value=f"```{', '.join(never_seen_list)}{' ...' if len(never_seen) > 20 else ''}```",
+                inline=False
+            )
+        
+        # Streamers potentiellement inactifs
+        if inactive_streamers:
+            inactive_list = inactive_streamers[:20]
+            embed.add_field(
+                name=f"⚠️ Potentiellement inactifs ({len(inactive_streamers)} streamers)",
+                value=f"```{', '.join(inactive_list)}{' ...' if len(inactive_streamers) > 20 else ''}```",
+                inline=False
+            )
+        
+        # Streamers actifs
+        embed.add_field(
+            name=f"✅ Streamers actifs",
+            value=f"**{len(active_streamers)}** streamers en ligne ou récemment actifs",
+            inline=False
+        )
+        
+        total_to_cleanup = len(never_seen) + len(inactive_streamers)
+        
+        if total_to_cleanup == 0:
+            embed.add_field(
+                name="🎉 Résultat",
+                value="Aucun streamer inactif détecté !",
+                inline=False
+            )
+            embed.color = 0x57F287
+            await loading_msg.delete()
+            await ctx.send(embed=embed, delete_after=30)
+            return
+        
+        # Calculer l'économie
+        estimated_time_saved = (total_to_cleanup * 0.77)  # ~0.77s par streamer
+        embed.add_field(
+            name="💡 Économie estimée",
+            value=f"Suppression de **{total_to_cleanup}** streamers = **-{estimated_time_saved:.1f}s** au redémarrage",
+            inline=False
+        )
+        
+        embed.set_footer(text="⚠️ Réagissez avec ✅ pour confirmer la suppression (30s)")
+        
+        await loading_msg.delete()
+        confirm_msg = await ctx.send(embed=embed)
+        
+        # Ajouter la réaction
+        await confirm_msg.add_reaction("✅")
+        await confirm_msg.add_reaction("❌")
+        
+        # Attendre la confirmation
+        def check(reaction, user):
+            return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
+        
+        try:
+            reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
+            
+            if str(reaction.emoji) == "❌":
+                await confirm_msg.delete()
+                await ctx.send("❌ Nettoyage annulé.", delete_after=5)
+                return
+            
+            # Confirmation reçue, procéder au nettoyage
+            await confirm_msg.delete()
+            progress_msg = await ctx.send("🧹 Nettoyage en cours...")
+            
+            # Combiner les listes
+            to_remove = never_seen + inactive_streamers
+            
+            # Ajouter à la blacklist (plus simple que d'unfollow via API)
+            blacklist_file = Path("blacklist.json")
+            if blacklist_file.exists():
+                with open(blacklist_file, 'r') as f:
+                    blacklist = json.load(f)
+            else:
+                blacklist = []
+            
+            # Ajouter les streamers inactifs à la blacklist
+            added_count = 0
+            for streamer in to_remove:
+                if streamer not in blacklist:
+                    blacklist.append(streamer)
+                    added_count += 1
+            
+            # Sauvegarder la blacklist
+            with open(blacklist_file, 'w') as f:
+                json.dump(blacklist, f, indent=2)
+            
+            # Supprimer du cache des followers
+            cache_file = Path("followers_cache.json")
+            removed_from_cache = 0
+            if cache_file.exists():
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                
+                original_count = len(cache_data.get('followers', []))
+                cache_data['followers'] = [
+                    f for f in cache_data.get('followers', []) 
+                    if f not in to_remove
+                ]
+                removed_from_cache = original_count - len(cache_data['followers'])
+                cache_data['count'] = len(cache_data['followers'])
+                
+                with open(cache_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+            
+            # Supprimer des données du bot
+            for streamer in to_remove:
+                if streamer in streamer_data:
+                    del streamer_data[streamer]
+            save_data()
+            
+            await progress_msg.delete()
+            
+            # Message de succès
+            success_embed = discord.Embed(
+                title="✅ Nettoyage Terminé !",
+                description=f"**{added_count}** streamers ajoutés à la blacklist",
+                color=0x57F287
+            )
+            
+            success_embed.add_field(
+                name="📊 Résultats",
+                value=f"• Blacklist: +{added_count} streamers\n"
+                      f"• Cache: -{removed_from_cache} followers\n"
+                      f"• Gain: ~{estimated_time_saved:.1f}s au redémarrage",
+                inline=False
+            )
+            
+            success_embed.add_field(
+                name="💡 Prochaines étapes",
+                value="Les streamers blacklistés ne seront plus minés.\n"
+                      "Utilisez `!list` pour voir la blacklist complète.\n"
+                      "Utilisez `!unblacklist <nom>` pour restaurer un streamer.",
+                inline=False
+            )
+            
+            success_embed.set_footer(text=f"Streamers restants: {len(streamer_data)}")
+            
+            await ctx.send(embed=success_embed, delete_after=60)
+            
+            print(f"🧹 Cleanup: {added_count} streamers inactifs blacklistés")
+            print(f"💾 Cache: {removed_from_cache} followers supprimés")
+            
+        except asyncio.TimeoutError:
+            await confirm_msg.delete()
+            await ctx.send("⏱️ Temps écoulé. Nettoyage annulé.", delete_after=5)
+    
+    except Exception as e:
+        await loading_msg.delete()
+        await ctx.send(f"❌ Erreur: {e}", delete_after=15)
+        print(f"❌ Erreur cleanup: {e}")
+        import traceback
+        traceback.print_exc()
+
 @bot.command(name='help')
 async def help_command(ctx):
     """Affiche l'aide"""
@@ -1556,6 +1779,12 @@ async def help_command(ctx):
     embed.add_field(
         name="!refreshcache",
         value="Force le rechargement des follows au prochain redémarrage",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!cleanup [jours]",
+        value="🧹 Supprime les streamers inactifs\nEx: `!cleanup` ou `!cleanup 60`",
         inline=False
     )
     
