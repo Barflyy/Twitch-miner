@@ -233,10 +233,10 @@ def create_stats_embed() -> discord.Embed:
         inline=True
     )
     
-    # Salons Discord
+    # Nombre de followers totaux (basé sur les salons Discord créés)
     embed.add_field(
-        name="💬 Salons Discord",
-        value=f"📁 **{total_channels}** salons créés\n🔄 Mise à jour: 30s",
+        name="👥 Followers Totaux",
+        value=f"📁 **{total_channels}** streamers suivis\n💬 Salons Discord créés\n🔄 Mise à jour: 30s",
         inline=True
     )
     
