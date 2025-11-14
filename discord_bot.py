@@ -11,17 +11,20 @@ from pathlib import Path
 
 # Configuration
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))  # Canal pour les commandes
+CATEGORY_ID = int(os.getenv("DISCORD_CATEGORY_ID", "0"))  # Catégorie pour les salons streamers
 DATA_FILE = "bot_data.json"
 
-# Intents (avec message_content pour les commandes)
+# Intents (avec message_content + guilds pour gérer les salons)
 intents = discord.Intents.default()
-intents.message_content = True  # Nécessaire pour !status, !refresh, etc.
+intents.message_content = True
+intents.guilds = True
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# Stockage des message IDs pour les fiches
-streamer_cards = {}  # {streamer: message_id}
+# Stockage des salons et messages
+streamer_channels = {}  # {streamer: channel_id}
+streamer_messages = {}  # {streamer: message_id} (message dans le salon)
 streamer_data = {}   # {streamer: {stats}}
 
 def load_data():
@@ -36,24 +39,31 @@ def load_data():
         print(f"❌ Erreur chargement data: {e}")
         streamer_data = {}
 
-def save_cards():
-    """Sauvegarde les message IDs des fiches"""
+def save_channels():
+    """Sauvegarde les IDs des salons streamers"""
     try:
-        with open('streamer_cards.json', 'w') as f:
-            json.dump(streamer_cards, f)
+        data = {
+            'channels': streamer_channels,
+            'messages': streamer_messages
+        }
+        with open('streamer_channels.json', 'w') as f:
+            json.dump(data, f)
     except Exception as e:
-        print(f"❌ Erreur sauvegarde cards: {e}")
+        print(f"❌ Erreur sauvegarde channels: {e}")
 
-def load_cards():
-    """Charge les message IDs des fiches"""
-    global streamer_cards
+def load_channels():
+    """Charge les IDs des salons streamers"""
+    global streamer_channels, streamer_messages
     try:
-        if Path('streamer_cards.json').exists():
-            with open('streamer_cards.json', 'r') as f:
-                streamer_cards = json.load(f)
+        if Path('streamer_channels.json').exists():
+            with open('streamer_channels.json', 'r') as f:
+                data = json.load(f)
+                streamer_channels = data.get('channels', {})
+                streamer_messages = data.get('messages', {})
     except Exception as e:
-        print(f"❌ Erreur chargement cards: {e}")
-        streamer_cards = {}
+        print(f"❌ Erreur chargement channels: {e}")
+        streamer_channels = {}
+        streamer_messages = {}
 
 def create_streamer_embed(streamer: str) -> discord.Embed:
     """Crée un embed pour un streamer"""
@@ -145,160 +155,186 @@ async def on_ready():
     print(f'✅ Bot connecté: {bot.user.name}')
     print(f'📋 ID: {bot.user.id}')
     
+    # Vérifier qu'on a une catégorie définie
+    if not CATEGORY_ID or CATEGORY_ID == 0:
+        print("[BOT] ⚠️ DISCORD_CATEGORY_ID non défini !")
+        print("[BOT] Créez une catégorie Discord et ajoutez son ID dans les variables d'environnement")
+        print("[BOT] Le bot fonctionnera en mode fiches dans DISCORD_CHANNEL_ID")
+        return
+    
     # Charger les données
-    load_cards()
+    load_channels()
     load_data()
     
-    # Clear le canal au démarrage (supprimer tous les anciens messages)
-    if CHANNEL_ID and CHANNEL_ID != 0:
-        try:
-            channel = bot.get_channel(CHANNEL_ID)
-            if channel:
-                print("🧹 Nettoyage du canal (suppression anciens messages)...")
-                deleted = await channel.purge(limit=100)  # Supprimer max 100 messages
-                print(f"✅ {len(deleted)} messages supprimés")
-        except Exception as e:
-            print(f"⚠️  Erreur clear canal: {e}")
-    
     # Démarrer la boucle de mise à jour
-    if not update_cards.is_running():
-        update_cards.start()
+    if not update_channels.is_running():
+        update_channels.start()
     
     print("🔄 Mise à jour automatique activée (30 secondes)")
     
-    # Afficher les fiches immédiatement au démarrage
-    if CHANNEL_ID and CHANNEL_ID != 0:
-        print("📊 Création des fiches initiales...")
-        await asyncio.sleep(2)  # Attendre un peu que les données soient prêtes
-        await update_cards()  # Forcer une mise à jour immédiate
-        print("✅ Fiches initiales créées")
+    # Créer/mettre à jour les salons immédiatement
+    print("📊 Création/mise à jour des salons streamers...")
+    await asyncio.sleep(2)  # Attendre un peu que les données soient prêtes
+    await update_channels()
+    print("✅ Salons streamers créés/mis à jour")
 
 @tasks.loop(seconds=30)
-async def update_cards():
-    """Met à jour les fiches streamers - SEULEMENT les en ligne"""
-    if not CHANNEL_ID or CHANNEL_ID == 0:
+async def update_channels():
+    """Met à jour les salons streamers selon leur statut"""
+    if not CATEGORY_ID or CATEGORY_ID == 0:
         return
     
     try:
-        channel = bot.get_channel(CHANNEL_ID)
-        if not channel:
+        category = bot.get_channel(CATEGORY_ID)
+        if not category or not isinstance(category, discord.CategoryChannel):
+            print(f"❌ Catégorie {CATEGORY_ID} introuvable ou invalide")
             return
+        
+        guild = category.guild
         
         # Recharger les données
         load_data()
         
-        # Séparer les streamers en ligne et hors ligne
-        online_streamers = {s: d for s, d in streamer_data.items() if d.get('online', False)}
-        offline_streamers = {s: d for s, d in streamer_data.items() if not d.get('online', False)}
-        
-        # 1. Supprimer les fiches des streamers OFFLINE
-        for streamer in list(streamer_cards.keys()):
-            if streamer in offline_streamers or streamer not in streamer_data:
-                try:
-                    message = await channel.fetch_message(streamer_cards[streamer])
-                    await message.delete()
-                    print(f"🗑️  Fiche supprimée: {streamer} (offline)")
-                except discord.NotFound:
-                    pass  # Déjà supprimé
-                except Exception as e:
-                    print(f"⚠️  Erreur suppression {streamer}: {e}")
-                
-                # Retirer de la liste
-                del streamer_cards[streamer]
-                save_cards()
-        
-        # 2. Créer/Mettre à jour les fiches des streamers EN LIGNE
-        for streamer in online_streamers.keys():
-            embed = create_streamer_embed(streamer)
+        # Pour chaque streamer dans les données
+        for streamer, data in streamer_data.items():
+            is_online = data.get('online', False)
+            status_emoji = "🟢" if is_online else "🔴"
+            channel_name = f"{status_emoji}-{streamer.lower()}"
             
-            # Si la fiche existe, la mettre à jour
-            if streamer in streamer_cards:
-                try:
-                    message = await channel.fetch_message(streamer_cards[streamer])
-                    await message.edit(embed=embed)
-                except discord.NotFound:
-                    # Message supprimé, en créer un nouveau
+            # Si le salon existe déjà
+            if streamer in streamer_channels:
+                channel_id = streamer_channels[streamer]
+                channel = guild.get_channel(channel_id)
+                
+                if channel:
+                    # Mettre à jour le nom si le statut a changé
+                    if channel.name != channel_name:
+                        await channel.edit(name=channel_name)
+                        print(f"🔄 Salon renommé: {channel_name}")
+                    
+                    # Mettre à jour le message dans le salon
+                    embed = create_streamer_embed(streamer)
+                    
+                    if streamer in streamer_messages:
+                        try:
+                            message = await channel.fetch_message(streamer_messages[streamer])
+                            await message.edit(embed=embed)
+                        except discord.NotFound:
+                            # Message supprimé, en créer un nouveau
+                            message = await channel.send(embed=embed)
+                            streamer_messages[streamer] = message.id
+                            save_channels()
+                    else:
+                        # Créer le message initial
+                        message = await channel.send(embed=embed)
+                        streamer_messages[streamer] = message.id
+                        save_channels()
+                else:
+                    # Le salon a été supprimé, le recréer
+                    print(f"🔄 Recréation du salon: {channel_name}")
+                    channel = await guild.create_text_channel(
+                        name=channel_name,
+                        category=category
+                    )
+                    streamer_channels[streamer] = channel.id
+                    
+                    # Créer le message initial
+                    embed = create_streamer_embed(streamer)
                     message = await channel.send(embed=embed)
-                    streamer_cards[streamer] = message.id
-                    save_cards()
-                    print(f"📝 Fiche recréée: {streamer}")
-                except Exception as e:
-                    print(f"❌ Erreur update {streamer}: {e}")
+                    streamer_messages[streamer] = message.id
+                    save_channels()
+            
             else:
-                # Créer une nouvelle fiche (streamer vient de passer en ligne)
+                # Créer un nouveau salon pour ce streamer
+                print(f"✅ Création du salon: {channel_name}")
+                channel = await guild.create_text_channel(
+                    name=channel_name,
+                    category=category
+                )
+                streamer_channels[streamer] = channel.id
+                
+                # Créer le message initial
+                embed = create_streamer_embed(streamer)
                 message = await channel.send(embed=embed)
-                streamer_cards[streamer] = message.id
-                save_cards()
-                print(f"✅ Fiche créée: {streamer} (online)")
+                streamer_messages[streamer] = message.id
+                save_channels()
+        
+        # Supprimer les salons des streamers qui ne sont plus dans la liste
+        for streamer in list(streamer_channels.keys()):
+            if streamer not in streamer_data:
+                channel_id = streamer_channels[streamer]
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    await channel.delete()
+                    print(f"🗑️  Salon supprimé: {streamer}")
+                
+                del streamer_channels[streamer]
+                if streamer in streamer_messages:
+                    del streamer_messages[streamer]
+                save_channels()
     
     except Exception as e:
-        print(f"❌ Erreur update_cards: {e}")
+        print(f"❌ Erreur update_channels: {e}")
+        import traceback
+        traceback.print_exc()
 
-@update_cards.before_loop
-async def before_update_cards():
+@update_channels.before_loop
+async def before_update_channels():
     await bot.wait_until_ready()
 
 @bot.command(name='refresh')
-async def refresh_cards(ctx):
-    """Force la mise à jour des fiches (seulement streamers en ligne)"""
+async def refresh_channels(ctx):
+    """Force la mise à jour des salons"""
     # Supprimer la commande de l'utilisateur
     try:
         await ctx.message.delete()
     except:
         pass
     
-    msg = await ctx.send("🔄 Mise à jour forcée...")
+    msg = await ctx.send("🔄 Mise à jour forcée des salons...")
     
     load_data()
+    await update_channels()
     
-    # Séparer en ligne et hors ligne
-    online_streamers = {s: d for s, d in streamer_data.items() if d.get('online', False)}
-    offline_streamers = {s: d for s, d in streamer_data.items() if not d.get('online', False)}
-    
-    # Supprimer les fiches offline
-    for streamer in list(streamer_cards.keys()):
-        if streamer in offline_streamers or streamer not in streamer_data:
-            try:
-                message = await ctx.channel.fetch_message(streamer_cards[streamer])
-                await message.delete()
-            except:
-                pass
-            del streamer_cards[streamer]
-            save_cards()
-    
-    # Créer/Mettre à jour les fiches online
-    for streamer in online_streamers.keys():
-        embed = create_streamer_embed(streamer)
-        
-        if streamer in streamer_cards:
-            try:
-                message = await ctx.channel.fetch_message(streamer_cards[streamer])
-                await message.edit(embed=embed)
-            except discord.NotFound:
-                message = await ctx.send(embed=embed)
-                streamer_cards[streamer] = message.id
-                save_cards()
-        else:
-            message = await ctx.send(embed=embed)
-            streamer_cards[streamer] = message.id
-            save_cards()
-    
-    await msg.edit(content=f"✅ Fiches mises à jour ! ({len(online_streamers)} en ligne)")
+    await msg.edit(content=f"✅ Salons mis à jour ! ({len(streamer_data)} streamers)")
     await msg.delete(delay=5)
 
 @bot.command(name='reset')
-async def reset_cards(ctx):
-    """Réinitialise toutes les fiches"""
+async def reset_channels(ctx):
+    """Supprime tous les salons streamers et réinitialise"""
     # Supprimer la commande de l'utilisateur
     try:
         await ctx.message.delete()
     except:
         pass
     
-    global streamer_cards
-    streamer_cards = {}
-    save_cards()
-    await ctx.send("✅ Fiches réinitialisées ! Utilisez `!refresh` pour les recréer.")
+    if not CATEGORY_ID or CATEGORY_ID == 0:
+        await ctx.send("❌ DISCORD_CATEGORY_ID non défini !", delete_after=5)
+        return
+    
+    msg = await ctx.send("⚠️  Suppression de tous les salons streamers...")
+    
+    category = bot.get_channel(CATEGORY_ID)
+    if category and isinstance(category, discord.CategoryChannel):
+        guild = category.guild
+        
+        # Supprimer tous les salons
+        for streamer, channel_id in list(streamer_channels.items()):
+            channel = guild.get_channel(channel_id)
+            if channel:
+                await channel.delete()
+                print(f"🗑️  Salon supprimé: {streamer}")
+        
+        global streamer_channels, streamer_messages
+        streamer_channels = {}
+        streamer_messages = {}
+        save_channels()
+        
+        await msg.edit(content="✅ Tous les salons ont été supprimés ! Utilisez `!refresh` pour les recréer.")
+    else:
+        await msg.edit(content="❌ Catégorie introuvable !")
+    
+    await msg.delete(delay=5)
 
 @bot.command(name='status')
 async def status(ctx, streamer: str = None):
@@ -321,12 +357,12 @@ async def status(ctx, streamer: str = None):
         streamer_lower = streamer.lower()
         
         if streamer_lower not in streamer_data:
-            await ctx.send(f"❌ Streamer `{streamer}` non trouvé. Streamers disponibles: {', '.join(streamer_data.keys())}")
+            await ctx.send(f"❌ Streamer `{streamer}` non trouvé. Streamers disponibles: {', '.join(streamer_data.keys())}", delete_after=10)
             return
         
         # Créer un embed pour ce streamer
         embed = create_streamer_embed(streamer_lower)
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, delete_after=30)
     
     # Sinon, afficher le statut général
     else:
@@ -342,7 +378,7 @@ async def status(ctx, streamer: str = None):
         
         embed.add_field(name="📺 Streamers", value=f"{online_streamers}/{total_streamers} en ligne", inline=True)
         embed.add_field(name="🔄 Update auto", value="30 secondes", inline=True)
-        embed.add_field(name="📋 Fiches actives", value=str(len(streamer_cards)), inline=True)
+        embed.add_field(name="📋 Salons actifs", value=str(len(streamer_channels)), inline=True)
         
         # Liste des streamers
         if streamer_data:
@@ -359,7 +395,7 @@ async def status(ctx, streamer: str = None):
         
         embed.set_footer(text="Utilisez !status <streamer> pour voir un streamer spécifique")
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, delete_after=30)
 
 @bot.command(name='add')
 async def add_streamer(ctx, streamer: str):
@@ -392,14 +428,13 @@ async def add_streamer(ctx, streamer: str):
     with open(streamers_file, 'w') as f:
         json.dump(streamers_list, f, indent=2)
     
-    # Créer une fiche immédiatement (vide en attendant les données)
+    # Créer le salon immédiatement
     load_data()
     if streamer_lower not in streamer_data:
         streamer_data[streamer_lower] = {
             'online': False,
             'balance': 0,
             'starting_balance': 0,
-            'total_earned': 0,
             'session_points': 0,
             'watch_points': 0,
             'bonus_points': 0,
@@ -408,13 +443,8 @@ async def add_streamer(ctx, streamer: str):
             'bets_lost': 0
         }
     
-    # Créer la fiche
-    embed = create_streamer_embed(streamer_lower)
-    channel = bot.get_channel(CHANNEL_ID)
-    if channel:
-        message = await channel.send(embed=embed)
-        streamer_cards[streamer_lower] = message.id
-        save_cards()
+    # Forcer la mise à jour pour créer le salon
+    await update_channels()
     
     await ctx.send(f"✅ **{streamer}** ajouté ! Le miner le prendra en compte au prochain redémarrage.", delete_after=10)
 
@@ -449,16 +479,21 @@ async def remove_streamer(ctx, streamer: str):
     with open(streamers_file, 'w') as f:
         json.dump(streamers_list, f, indent=2)
     
-    # Supprimer la fiche
-    if streamer_lower in streamer_cards:
-        try:
-            channel = bot.get_channel(CHANNEL_ID)
-            message = await channel.fetch_message(streamer_cards[streamer_lower])
-            await message.delete()
-            del streamer_cards[streamer_lower]
-            save_cards()
-        except:
-            pass
+    # Supprimer le salon
+    if streamer_lower in streamer_channels and CATEGORY_ID != 0:
+        category = bot.get_channel(CATEGORY_ID)
+        if category:
+            guild = category.guild
+            channel_id = streamer_channels[streamer_lower]
+            channel = guild.get_channel(channel_id)
+            if channel:
+                await channel.delete()
+                print(f"🗑️  Salon supprimé: {streamer_lower}")
+            
+            del streamer_channels[streamer_lower]
+            if streamer_lower in streamer_messages:
+                del streamer_messages[streamer_lower]
+            save_channels()
     
     await ctx.send(f"✅ **{streamer}** retiré ! Redémarrez le miner pour appliquer.", delete_after=10)
 
@@ -489,7 +524,7 @@ async def list_streamers(ctx):
         color=0x9B59B6
     )
     
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, delete_after=30)
 
 @bot.command(name='help')
 async def help_command(ctx):
@@ -538,13 +573,13 @@ async def help_command(ctx):
     
     embed.add_field(
         name="!refresh",
-        value="Force la mise à jour des fiches",
+        value="Force la mise à jour des salons",
         inline=False
     )
     
     embed.add_field(
         name="!reset",
-        value="Réinitialise toutes les fiches",
+        value="Supprime tous les salons streamers",
         inline=False
     )
     
@@ -554,9 +589,9 @@ async def help_command(ctx):
         inline=False
     )
     
-    embed.set_footer(text="💡 Fiches auto-update 30s • Les commandes se suppriment automatiquement")
+    embed.set_footer(text="💡 Salons auto-update 30s • 🟢 = Online • 🔴 = Offline")
     
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, delete_after=60)
 
 def main():
     if not BOT_TOKEN:
@@ -564,13 +599,16 @@ def main():
         print("Créez un bot sur https://discord.com/developers/applications")
         return
     
+    if not CATEGORY_ID or CATEGORY_ID == 0:
+        print("⚠️  DISCORD_CATEGORY_ID non défini !")
+        print("Créez une catégorie Discord et ajoutez son ID dans les variables d'environnement")
+        print("Le bot ne pourra pas créer de salons streamers")
+    
     if not CHANNEL_ID or CHANNEL_ID == 0:
-        print("⚠️  DISCORD_CHANNEL_ID non défini - les fiches auto ne fonctionneront pas")
-        print("Utilisez !refresh dans un canal pour créer les fiches manuellement")
+        print("⚠️  DISCORD_CHANNEL_ID non défini - les commandes devront être utilisées dans n'importe quel canal")
     
     print("🚀 Démarrage du bot Discord...")
     bot.run(BOT_TOKEN)
 
 if __name__ == "__main__":
     main()
-
