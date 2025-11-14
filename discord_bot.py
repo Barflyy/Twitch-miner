@@ -26,17 +26,32 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 streamer_channels = {}  # {streamer: channel_id}
 streamer_messages = {}  # {streamer: message_id} (message dans le salon)
 streamer_data = {}   # {streamer: {stats}}
+streamer_data_cache = {}  # Cache pour détecter les changements
 category_channels = {}  # {category_id: [channel_ids]} - Suivi des canaux par catégorie
+category_cache = {}  # Cache des catégories {category_index: category}
 MAX_CHANNELS_PER_CATEGORY = 50  # Limite Discord
+last_data_load = 0  # Timestamp du dernier chargement
+DATA_CACHE_TTL = 5  # Cache les données pendant 5 secondes
 
-def load_data():
-    """Charge les données depuis le fichier JSON"""
-    global streamer_data
+def load_data(force=False):
+    """Charge les données depuis le fichier JSON avec cache"""
+    global streamer_data, last_data_load
+    import time
+    
+    current_time = time.time()
+    
+    # Utiliser le cache si récent et pas de force
+    if not force and (current_time - last_data_load) < DATA_CACHE_TTL:
+        return
+    
     try:
         if Path(DATA_FILE).exists():
             with open(DATA_FILE, 'r') as f:
                 data = json.load(f)
                 streamer_data = data.get('streamers', {})
+        else:
+            streamer_data = {}
+        last_data_load = current_time
     except Exception as e:
         print(f"❌ Erreur chargement data: {e}")
         streamer_data = {}
@@ -171,7 +186,11 @@ async def on_ready():
     
     # Charger les données
     load_channels()
-    load_data()
+    load_data(force=True)  # Force le chargement au démarrage
+    
+    # Initialiser le cache avec les données actuelles
+    global streamer_data_cache
+    streamer_data_cache = {k: v.copy() for k, v in streamer_data.items()}
     
     # Démarrer la boucle de mise à jour
     if not update_channels.is_running():
@@ -186,20 +205,32 @@ async def on_ready():
     print("✅ Salons streamers créés/mis à jour")
 
 async def get_or_create_category(guild, base_category, category_index):
-    """Récupère ou crée une catégorie pour les streamers"""
+    """Récupère ou crée une catégorie pour les streamers (avec cache)"""
     if category_index == 0:
         # Utiliser la catégorie de base
         return base_category
+    
+    # Vérifier le cache
+    if category_index in category_cache:
+        cached_cat = category_cache[category_index]
+        # Vérifier que la catégorie existe toujours
+        if cached_cat in guild.categories:
+            return cached_cat
+        else:
+            # Catégorie supprimée, retirer du cache
+            del category_cache[category_index]
     
     # Chercher une catégorie existante avec le bon nom
     category_name = f"{base_category.name} ({category_index + 1})"
     for cat in guild.categories:
         if cat.name == category_name:
+            category_cache[category_index] = cat
             return cat
     
     # Créer une nouvelle catégorie
     try:
         new_category = await guild.create_category(category_name)
+        category_cache[category_index] = new_category
         print(f"📁 Catégorie créée: {category_name}")
         return new_category
     except Exception as e:
@@ -210,6 +241,23 @@ async def get_category_for_channel(guild, base_category, streamer_index):
     """Détermine dans quelle catégorie placer un canal selon son index"""
     category_index = streamer_index // MAX_CHANNELS_PER_CATEGORY
     return await get_or_create_category(guild, base_category, category_index)
+
+def has_data_changed(streamer, new_data):
+    """Vérifie si les données d'un streamer ont changé"""
+    if streamer not in streamer_data_cache:
+        return True
+    
+    old_data = streamer_data_cache[streamer]
+    
+    # Comparer les champs importants
+    important_fields = ['online', 'balance', 'session_points', 'watch_points', 
+                       'bonus_points', 'bets_placed', 'bets_won', 'bets_lost']
+    
+    for field in important_fields:
+        if old_data.get(field) != new_data.get(field):
+            return True
+    
+    return False
 
 @tasks.loop(seconds=30)
 async def update_channels():
@@ -225,7 +273,7 @@ async def update_channels():
         
         guild = base_category.guild
         
-        # Recharger les données
+        # Recharger les données (avec cache - pas de force pour utiliser le cache)
         load_data()
         
         # Trier les streamers : en ligne d'abord, puis hors ligne
@@ -234,9 +282,12 @@ async def update_channels():
             key=lambda x: (not x[1].get('online', False), x[0].lower())
         )
         
+        channels_modified = False  # Flag pour batch save
+        updates_count = 0
+        
         # Mettre à jour ou créer les canaux
         for index, (streamer, data) in enumerate(sorted_streamers):
-            # Petit délai pour éviter les rate limits Discord (max 5 req/s)
+            # Rate limiting : 1s toutes les 5 requêtes (Discord limite à 5 req/s)
             if index > 0 and index % 5 == 0:
                 await asyncio.sleep(1)
             
@@ -253,11 +304,14 @@ async def update_channels():
                 channel = guild.get_channel(channel_id)
                 
                 if channel:
+                    needs_update = False
+                    
                     # Vérifier si le canal doit être déplacé vers une autre catégorie
                     if channel.category != target_category:
                         try:
                             await channel.edit(category=target_category)
                             print(f"🔄 Canal déplacé: {channel_name} → {target_category.name}")
+                            needs_update = True
                         except Exception as e:
                             print(f"⚠️  Erreur déplacement canal {channel_name}: {e}")
                     
@@ -265,24 +319,30 @@ async def update_channels():
                     if channel.name != channel_name:
                         await channel.edit(name=channel_name)
                         print(f"🔄 Salon renommé: {channel_name}")
+                        needs_update = True
                     
-                    # Mettre à jour le message dans le salon
-                    embed = create_streamer_embed(streamer)
-                    
-                    if streamer in streamer_messages:
-                        try:
-                            message = await channel.fetch_message(streamer_messages[streamer])
-                            await message.edit(embed=embed)
-                        except discord.NotFound:
-                            # Message supprimé, en créer un nouveau
+                    # Mettre à jour le message seulement si les données ont changé
+                    if has_data_changed(streamer, data):
+                        embed = create_streamer_embed(streamer)
+                        
+                        if streamer in streamer_messages:
+                            try:
+                                message = await channel.fetch_message(streamer_messages[streamer])
+                                await message.edit(embed=embed)
+                                updates_count += 1
+                            except discord.NotFound:
+                                # Message supprimé, en créer un nouveau
+                                message = await channel.send(embed=embed)
+                                streamer_messages[streamer] = message.id
+                                channels_modified = True
+                        else:
+                            # Créer le message initial
                             message = await channel.send(embed=embed)
                             streamer_messages[streamer] = message.id
-                            save_channels()
-                    else:
-                        # Créer le message initial
-                        message = await channel.send(embed=embed)
-                        streamer_messages[streamer] = message.id
-                        save_channels()
+                            channels_modified = True
+                        
+                        # Mettre à jour le cache
+                        streamer_data_cache[streamer] = data.copy()
                 else:
                     # Le salon a été supprimé, le recréer
                     print(f"🔄 Recréation du salon: {channel_name}")
@@ -297,7 +357,8 @@ async def update_channels():
                         embed = create_streamer_embed(streamer)
                         message = await channel.send(embed=embed)
                         streamer_messages[streamer] = message.id
-                        save_channels()
+                        channels_modified = True
+                        streamer_data_cache[streamer] = data.copy()
                     except Exception as e:
                         print(f"❌ Erreur création salon {channel_name}: {e}")
             
@@ -315,7 +376,8 @@ async def update_channels():
                     embed = create_streamer_embed(streamer)
                     message = await channel.send(embed=embed)
                     streamer_messages[streamer] = message.id
-                    save_channels()
+                    channels_modified = True
+                    streamer_data_cache[streamer] = data.copy()
                 except Exception as e:
                     print(f"❌ Erreur création salon {channel_name}: {e}")
                     # Si erreur de limite, essayer la catégorie suivante
@@ -331,7 +393,8 @@ async def update_channels():
                             embed = create_streamer_embed(streamer)
                             message = await channel.send(embed=embed)
                             streamer_messages[streamer] = message.id
-                            save_channels()
+                            channels_modified = True
+                            streamer_data_cache[streamer] = data.copy()
                             print(f"✅ Salon créé dans catégorie suivante: {channel_name}")
                         except Exception as e2:
                             print(f"❌ Erreur création salon dans catégorie suivante: {e2}")
@@ -348,7 +411,17 @@ async def update_channels():
                 del streamer_channels[streamer]
                 if streamer in streamer_messages:
                     del streamer_messages[streamer]
-                save_channels()
+                if streamer in streamer_data_cache:
+                    del streamer_data_cache[streamer]
+                channels_modified = True
+        
+        # Sauvegarder seulement si des modifications ont été faites
+        if channels_modified:
+            save_channels()
+        
+        # Log périodique
+        if updates_count > 0:
+            print(f"📊 {updates_count} messages mis à jour sur {len(sorted_streamers)} streamers")
     
     except Exception as e:
         print(f"❌ Erreur update_channels: {e}")
@@ -370,7 +443,7 @@ async def refresh_channels(ctx):
     
     msg = await ctx.send("🔄 Mise à jour forcée des salons...")
     
-    load_data()
+    load_data(force=True)  # Force le rechargement
     await update_channels()
     
     await msg.edit(content=f"✅ Salons mis à jour ! ({len(streamer_data)} streamers)")
@@ -428,7 +501,7 @@ async def status(ctx, streamer: str = None):
     except:
         pass
     
-    load_data()
+    load_data(force=True)  # Toujours charger les dernières données pour les commandes
     
     # Si un streamer est spécifié
     if streamer:
@@ -459,6 +532,7 @@ async def status(ctx, streamer: str = None):
         embed.add_field(name="📋 Salons actifs", value=str(len(streamer_channels)), inline=True)
         
         # Liste des streamers (triés : en ligne d'abord)
+        # Limite Discord : 2000 caractères max par field, donc on limite à ~100 streamers
         if streamer_data:
             streamers_list = []
             # Trier : en ligne d'abord, puis hors ligne
@@ -466,13 +540,24 @@ async def status(ctx, streamer: str = None):
                 streamer_data.items(),
                 key=lambda x: (not x[1].get('online', False), x[0].lower())
             )
+            
+            # Limiter l'affichage pour éviter de dépasser la limite Discord
+            max_display = 100
+            displayed_count = 0
             for name, data in sorted_streamers:
+                if displayed_count >= max_display:
+                    break
                 status_emoji = "🟢" if data.get('online', False) else "🔴"
                 streamers_list.append(f"{status_emoji} {name}")
+                displayed_count += 1
+            
+            display_text = "\n".join(streamers_list) if streamers_list else "Aucun"
+            if len(sorted_streamers) > max_display:
+                display_text += f"\n\n... et {len(sorted_streamers) - max_display} autres"
             
             embed.add_field(
-                name="📋 Streamers suivis",
-                value="\n".join(streamers_list) if streamers_list else "Aucun",
+                name=f"📋 Streamers suivis ({len(sorted_streamers)} total)",
+                value=display_text,
                 inline=False
             )
         
