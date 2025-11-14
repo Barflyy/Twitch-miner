@@ -5,13 +5,13 @@ import sys
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
-password = os.getenv("TWITCH_AUTH_TOKEN") 
+auth_token = os.getenv("TWITCH_AUTH_TOKEN")  # Token OAuth au lieu de password
 streamers_list = os.getenv("STREAMERS", "")
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
 USE_FOLLOWERS = os.getenv("USE_FOLLOWERS", "true").lower() == "true"
 
-if not username or not password:
-    print("❌ Configuration manquante")
+if not username or not auth_token:
+    print("❌ Configuration manquante : TWITCH_USERNAME et TWITCH_AUTH_TOKEN requis")
     sys.exit(1)
 
 # Parser les streamers ou utiliser followers
@@ -70,7 +70,7 @@ if USE_DISCORD_BOT:
 # Configuration avec priorités optimisées
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
-    password=password,
+    password=auth_token,  # Utilise le token OAuth comme password
     claim_drops_startup=False,
     # Priorités pour followers
     priority=[
