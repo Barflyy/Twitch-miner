@@ -428,6 +428,71 @@ async def get_twitch_followers_count(username: str) -> int:
         print(f"❌ Erreur récupération followers pour {username}: {e}")
         return 0
 
+async def check_twitch_last_stream(username: str) -> dict:
+    """Vérifie quand un streamer a stream pour la dernière fois via l'API Twitch publique
+    
+    Returns:
+        dict: {
+            'is_live': bool,
+            'last_stream_ago_days': int or None,
+            'error': str or None
+        }
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Utiliser l'API GraphQL publique de Twitch
+            gql_url = "https://gql.twitch.tv/gql"
+            headers = {
+                "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko"
+            }
+            
+            # Query pour récupérer les infos du streamer
+            gql_payload = {
+                "query": """
+                query($login: String!) {
+                    user(login: $login) {
+                        stream {
+                            id
+                        }
+                        lastBroadcast {
+                            startedAt
+                        }
+                    }
+                }
+                """,
+                "variables": {"login": username}
+            }
+            
+            async with session.post(gql_url, json=gql_payload, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    if "data" in data and "user" in data["data"] and data["data"]["user"]:
+                        user = data["data"]["user"]
+                        
+                        # Vérifier si en ligne
+                        is_live = user.get("stream") is not None
+                        
+                        # Calculer le temps depuis le dernier stream
+                        last_broadcast = user.get("lastBroadcast")
+                        days_ago = None
+                        
+                        if last_broadcast and "startedAt" in last_broadcast:
+                            from datetime import datetime
+                            last_stream_time = datetime.fromisoformat(last_broadcast["startedAt"].replace("Z", "+00:00"))
+                            days_ago = (datetime.now(last_stream_time.tzinfo) - last_stream_time).days
+                        
+                        return {
+                            'is_live': is_live,
+                            'last_stream_ago_days': days_ago,
+                            'error': None
+                        }
+                
+                return {'is_live': False, 'last_stream_ago_days': None, 'error': f'API returned {response.status}'}
+        
+    except Exception as e:
+        return {'is_live': False, 'last_stream_ago_days': None, 'error': str(e)}
+
 async def update_stats_channels(guild):
     """Crée ou met à jour le salon de statistiques (streams en ligne seulement)"""
     global online_count_channel_id
@@ -1497,13 +1562,17 @@ async def refresh_cache_command(ctx):
         print(f"❌ Erreur suppression cache : {e}")
 
 @bot.command(name='cleanup')
-async def cleanup_inactive(ctx, days: int = 30):
+async def cleanup_inactive(ctx, days: int = 30, mode: str = "safe"):
     """🧹 Analyse et supprime les streamers inactifs depuis X jours
     
     Usage:
-        !cleanup           - Analyse les streamers inactifs depuis 30 jours
+        !cleanup           - Mode SAFE: supprime seulement les jamais vus (rapide)
         !cleanup 60        - Analyse les streamers inactifs depuis 60 jours
-        !cleanup 90        - Analyse les streamers inactifs depuis 90 jours
+        !cleanup 30 full   - Mode FULL: vérifie l'activité réelle sur Twitch (LENT, 465 requêtes)
+    
+    Modes:
+        safe (défaut) - Supprime SEULEMENT les streamers jamais vus (0 points)
+        full          - Vérifie l'activité RÉELLE sur Twitch (dernier stream)
     """
     # Supprimer la commande
     try:
@@ -1526,31 +1595,68 @@ async def cleanup_inactive(ctx, days: int = 30):
     try:
         load_data(force=True)
         
+        # Message de progression
+        await loading_msg.edit(content="🔍 Vérification de l'activité réelle sur Twitch API...")
+        
         # Calculer la date limite
         import time
         cutoff_timestamp = time.time() - (days * 86400)  # X jours en secondes
         
-        # Analyser les streamers
+        # Analyser les streamers en vérifiant leur VRAIE activité sur Twitch
         inactive_streamers = []
         active_streamers = []
         never_seen = []
+        truly_inactive = []
+        
+        # Vérifier l'activité via l'API Twitch publique
+        checked = 0
+        total = len(streamer_data)
         
         for streamer, data in streamer_data.items():
-            # Vérifier si le streamer a été vu en ligne
-            if not data.get('online', False):
-                # Vérifier s'il a des points (donc déjà vu)
-                balance = data.get('balance', 0)
-                session_points = data.get('session_points', 0)
-                
-                if balance == 0 and session_points == 0:
-                    # Jamais vu en ligne
-                    never_seen.append(streamer)
-                else:
-                    # Était en ligne avant mais plus maintenant (on ne peut pas savoir depuis quand exactement)
-                    # On les considère comme potentiellement inactifs
-                    inactive_streamers.append(streamer)
-            else:
+            checked += 1
+            if checked % 50 == 0:
+                await loading_msg.edit(content=f"🔍 Analyse en cours... {checked}/{total} streamers vérifiés")
+            
+            # D'abord regarder les données locales
+            balance = data.get('balance', 0)
+            session_points = data.get('session_points', 0)
+            is_online_now = data.get('online', False)
+            
+            # Si le streamer est online maintenant, il est actif
+            if is_online_now:
                 active_streamers.append(streamer)
+                continue
+            
+            # Si jamais vu (0 points)
+            if balance == 0 and session_points == 0:
+                never_seen.append(streamer)
+                continue
+            
+            # Pour les autres, vérifier selon le mode
+            if mode.lower() == "full":
+                # Mode FULL: vérifier l'activité réelle sur Twitch
+                stream_info = await check_twitch_last_stream(streamer)
+                
+                if stream_info['error']:
+                    # En cas d'erreur API, considérer comme potentiellement inactif
+                    inactive_streamers.append(streamer)
+                elif stream_info['last_stream_ago_days'] is not None:
+                    if stream_info['last_stream_ago_days'] > days:
+                        # N'a pas stream depuis X jours → vraiment inactif
+                        truly_inactive.append((streamer, stream_info['last_stream_ago_days']))
+                    else:
+                        # A stream récemment → actif
+                        active_streamers.append(streamer)
+                else:
+                    # Pas d'info de dernier stream → potentiellement inactif
+                    inactive_streamers.append(streamer)
+                
+                # Ralentir pour éviter le rate limit
+                if checked % 20 == 0:
+                    await asyncio.sleep(0.5)
+            else:
+                # Mode SAFE: juste marquer comme potentiellement inactif
+                inactive_streamers.append(streamer)
         
         # Créer l'embed de résultats
         embed = discord.Embed(
@@ -1568,12 +1674,25 @@ async def cleanup_inactive(ctx, days: int = 30):
                 inline=False
             )
         
+        # Streamers vraiment inactifs (mode FULL uniquement)
+        if truly_inactive:
+            inactive_list_full = [f"{s} ({d}j)" for s, d in sorted(truly_inactive, key=lambda x: x[1], reverse=True)[:20]]
+            embed.add_field(
+                name=f"🔴 Vraiment inactifs ({len(truly_inactive)} streamers)",
+                value=f"```{', '.join(inactive_list_full)}{' ...' if len(truly_inactive) > 20 else ''}```"
+                      f"\n⚠️ N'ont PAS stream depuis plus de {days} jours (vérifié sur Twitch)",
+                inline=False
+            )
+        
         # Streamers potentiellement inactifs
         if inactive_streamers:
             inactive_list = inactive_streamers[:20]
+            mode_text = "offline actuellement" if mode.lower() == "safe" else "sans info de dernier stream"
             embed.add_field(
-                name=f"⚠️ Potentiellement inactifs ({len(inactive_streamers)} streamers)",
-                value=f"```{', '.join(inactive_list)}{' ...' if len(inactive_streamers) > 20 else ''}```",
+                name=f"⚠️ Offline / Inconnus ({len(inactive_streamers)} streamers)",
+                value=f"```{', '.join(inactive_list)}{' ...' if len(inactive_streamers) > 20 else ''}```"
+                      f"\n💡 Mode SAFE: sont conservés (peuvent avoir stream récemment)\n"
+                      f"💡 Utilisez `!cleanup {days} full` pour vérifier leur vraie activité",
                 inline=False
             )
         
@@ -1584,12 +1703,20 @@ async def cleanup_inactive(ctx, days: int = 30):
             inline=False
         )
         
-        total_to_cleanup = len(never_seen) + len(inactive_streamers)
+        # En mode FULL, cleanup jamais vus + vraiment inactifs
+        # En mode SAFE, cleanup seulement jamais vus
+        if mode.lower() == "full":
+            total_to_cleanup = len(never_seen) + len(truly_inactive)
+            to_cleanup_list = never_seen + [s for s, _ in truly_inactive]
+        else:
+            total_to_cleanup = len(never_seen)
+            to_cleanup_list = never_seen
         
         if total_to_cleanup == 0:
             embed.add_field(
                 name="🎉 Résultat",
-                value="Aucun streamer inactif détecté !",
+                value=f"Aucun streamer jamais vu détecté !\n"
+                      f"💡 Utilisez `!cleanup force` pour aussi supprimer les {len(inactive_streamers)} offline.",
                 inline=False
             )
             embed.color = 0x57F287
@@ -1601,9 +1728,25 @@ async def cleanup_inactive(ctx, days: int = 30):
         estimated_time_saved = (total_to_cleanup * 0.77)  # ~0.77s par streamer
         embed.add_field(
             name="💡 Économie estimée",
-            value=f"Suppression de **{total_to_cleanup}** streamers = **-{estimated_time_saved:.1f}s** au redémarrage",
+            value=f"Suppression de **{total_to_cleanup}** streamers jamais vus = **-{estimated_time_saved:.1f}s** au redémarrage",
             inline=False
         )
+        
+        if mode.lower() == "full":
+            embed.add_field(
+                name="ℹ️ Mode FULL activé",
+                value=f"Suppression: **{len(never_seen)} jamais vus** + **{len(truly_inactive)} vraiment inactifs**\n"
+                      f"Conservés: **{len(inactive_streamers)} sans info** + **{len(active_streamers)} actifs**",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="ℹ️ Mode SAFE activé",
+                value=f"Suppression: **{len(never_seen)} jamais vus** uniquement\n"
+                      f"Conservés: **{len(inactive_streamers)} offline** (juliettearz, gotaga...) + **{len(active_streamers)} actifs**\n"
+                      f"💡 Pour vérifier l'activité réelle: `!cleanup {days} full`",
+                inline=False
+            )
         
         embed.set_footer(text="⚠️ Réagissez avec ✅ pour confirmer la suppression (30s)")
         
@@ -1630,8 +1773,8 @@ async def cleanup_inactive(ctx, days: int = 30):
             await confirm_msg.delete()
             progress_msg = await ctx.send("🧹 Nettoyage en cours...")
             
-            # Combiner les listes
-            to_remove = never_seen + inactive_streamers
+            # Utiliser la liste déterminée plus haut
+            to_remove = to_cleanup_list
             
             # Ajouter à la blacklist (plus simple que d'unfollow via API)
             blacklist_file = Path("blacklist.json")

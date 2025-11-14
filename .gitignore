@@ -156,6 +156,9 @@ start_miner.sh
 # Cookies Twitch (persistants sur Railway)
 .*_cookies.pkl
 
+# Cache des followers (optimisation 6min → 0.1s)
+followers_cache.json
+
 # Folders
 cookies/*
 logs/*
