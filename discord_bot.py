@@ -1045,8 +1045,8 @@ async def update_channels():
                 save_channels()
         
         # RÉORGANISATION : Trier les salons par ordre alphabétique dans chaque catégorie
-        # Utilise l'API bulk edit pour minimiser les appels
-        if channels_modified and len(online_streams) > 0:
+        # S'exécute à chaque cycle si nécessaire (pas seulement après modifications)
+        if len(online_streams) > 0:
             try:
                 reordered_count = 0
                 # Pour chaque catégorie de streams
@@ -1069,22 +1069,18 @@ async def update_channels():
                                 break
                         
                         if needs_reorder:
-                            # Bulk edit pour minimiser les API calls
-                            updates = []
-                            for position, channel in enumerate(sorted_channels):
-                                updates.append({'id': channel.id, 'position': position})
-                            
                             # Discord permet de modifier plusieurs salons à la fois
                             try:
                                 await cat.edit(channels=[(ch, pos) for pos, ch in enumerate(sorted_channels)])
                                 reordered_count += len(sorted_channels)
+                                print(f"📋 Catégorie {cat.name}: {len(sorted_channels)} salons triés alphabétiquement")
                                 await asyncio.sleep(1)  # Rate limiting entre catégories
                             except Exception as e:
                                 # Si bulk edit échoue, ne rien faire (pas critique)
-                                pass
+                                print(f"⚠️  Erreur tri {cat.name}: {e}")
                 
                 if reordered_count > 0:
-                    print(f"📋 {reordered_count} salons réorganisés par ordre alphabétique")
+                    print(f"✅ {reordered_count} salons total réorganisés")
             except Exception as e:
                 print(f"⚠️  Erreur réorganisation: {e}")
         
