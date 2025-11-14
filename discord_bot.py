@@ -18,7 +18,7 @@ DATA_FILE = "bot_data.json"
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Stockage des message IDs pour les fiches
 streamer_cards = {}  # {streamer: message_id}
