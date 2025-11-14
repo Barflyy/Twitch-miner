@@ -1090,7 +1090,7 @@ async def refresh_channels(ctx):
 @bot.command(name='reset')
 async def reset_channels(ctx):
     """Supprime tous les salons streamers et réinitialise"""
-    global streamer_channels, streamer_messages
+    global streamer_channels, streamer_messages, channels_index
     
     # Supprimer la commande de l'utilisateur
     try:
@@ -1109,21 +1109,71 @@ async def reset_channels(ctx):
         guild = category.guild
         
         # Supprimer tous les salons
+        deleted_count = 0
         for streamer, channel_id in list(streamer_channels.items()):
             channel = guild.get_channel(channel_id)
             if channel:
-                await channel.delete()
-                print(f"🗑️  Salon supprimé: {streamer}")
+                try:
+                    await channel.delete()
+                    deleted_count += 1
+                    print(f"🗑️  Salon supprimé ({deleted_count}): {streamer}")
+                    # Rate limiting : pause toutes les 5 suppressions
+                    if deleted_count % 5 == 0:
+                        await asyncio.sleep(2)
+                except Exception as e:
+                    print(f"⚠️  Erreur suppression {streamer}: {e}")
         
         streamer_channels = {}
         streamer_messages = {}
+        channels_index = {}
         save_channels()
         
-        await msg.edit(content="✅ Tous les salons ont été supprimés ! Utilisez `!refresh` pour les recréer.")
+        await msg.edit(content=f"✅ {deleted_count} salons supprimés ! Utilisez `!refresh` pour les recréer.")
     else:
         await msg.edit(content="❌ Catégorie introuvable !")
     
-    await msg.delete(delay=5)
+    await msg.delete(delay=10)
+
+@bot.command(name='nuke')
+async def nuke_all_channels(ctx):
+    """SUPPRIME TOUS LES SALONS dans toutes les catégories (DANGEREUX)"""
+    global streamer_channels, streamer_messages, channels_index
+    
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    msg = await ctx.send("⚠️  🔥 NUKE : Suppression de TOUS les salons dans toutes les catégories...")
+    
+    guild = ctx.guild
+    deleted_count = 0
+    
+    # Parcourir toutes les catégories qui contiennent des salons de streamers
+    for category in guild.categories:
+        for channel in category.text_channels:
+            # Supprimer seulement les salons qui ressemblent à des salons de streamers (🟢- ou 🔴-)
+            if channel.name.startswith("🟢-") or channel.name.startswith("🔴-"):
+                try:
+                    await channel.delete()
+                    deleted_count += 1
+                    print(f"🗑️  [NUKE] Salon supprimé ({deleted_count}): {channel.name}")
+                    # Rate limiting : pause toutes les 3 suppressions
+                    if deleted_count % 3 == 0:
+                        print(f"⏸️  Pause de 2s après {deleted_count} suppressions...")
+                        await asyncio.sleep(2)
+                except Exception as e:
+                    print(f"⚠️  Erreur suppression {channel.name}: {e}")
+    
+    # Réinitialiser tout
+    streamer_channels = {}
+    streamer_messages = {}
+    channels_index = {}
+    save_channels()
+    
+    await msg.edit(content=f"✅ 🔥 NUKE terminé : {deleted_count} salons supprimés !")
+    await msg.delete(delay=15)
 
 @bot.command(name='status')
 async def status(ctx, streamer: str = None):
