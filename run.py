@@ -7,27 +7,44 @@ from pathlib import Path
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
-auth_token = os.getenv("TWITCH_AUTH_TOKEN", "")  # Token OAuth optionnel
+
+# MODE D'AUTHENTIFICATION :
+# Les tokens OAuth des sites tiers (twitchtokengenerator) n'ont PAS les scopes GraphQL requis
+# On utilise donc la méthode TV Login officielle de Twitch (plus fiable)
+auth_token = None  # Force l'utilisation du TV Login
 
 if not username:
     print("❌ Configuration manquante : TWITCH_USERNAME requis")
     sys.exit(1)
 
-# Si pas de token OAuth, utiliser la méthode TV Login (plus fiable)
-if not auth_token or len(auth_token) < 30:
-    print("⚠️ TWITCH_AUTH_TOKEN absent ou invalide")
-    print("💡 Le bot va utiliser la méthode TV Login (code d'activation)")
-    auth_token = None  # Force l'utilisation du TV Login
+print("🔐 Mode d'authentification: TV Login (code d'activation Twitch)")
 
-# Supprimer les cookies obsolètes au démarrage (évite ERR_BADAUTH)
-cookies_dir = Path("cookies")
-if cookies_dir.exists():
-    for cookie_file in cookies_dir.glob("*.pkl"):
-        try:
-            cookie_file.unlink()
-            print(f"🗑️ Cookie obsolète supprimé: {cookie_file.name}")
-        except Exception as e:
-            print(f"⚠️ Erreur suppression cookie {cookie_file.name}: {e}")
+# Sur Railway, les cookies sont sauvegardés dans le dossier projet (pas de volume requis)
+# Vérifier si des cookies existent déjà
+if os.getenv("RAILWAY_ENVIRONMENT"):
+    cookie_file = Path(f".{username}_cookies.pkl")
+else:
+    cookie_file = Path("cookies") / f"{username}.pkl"
+
+if cookie_file.exists():
+    print(f"✅ Cookies trouvés: {cookie_file}")
+    print("💡 Utilisation des cookies sauvegardés (pas de code d'activation requis)")
+else:
+    print("⚠️ Aucun cookie trouvé")
+    print("💡 PREMIÈRE FOIS : Le bot va afficher un code d'activation")
+    print("📱 Va sur https://www.twitch.tv/activate et entre le code affiché")
+    print("⏳ ATTENTION: Sur Railway, tu as 15 minutes pour entrer le code avant timeout")
+    
+    # Supprimer les anciens cookies obsolètes
+    if not os.getenv("RAILWAY_ENVIRONMENT"):
+        cookies_dir = Path("cookies")
+        if cookies_dir.exists():
+            for old_cookie in cookies_dir.glob("*.pkl"):
+                try:
+                    old_cookie.unlink()
+                    print(f"🗑️ Cookie obsolète supprimé: {old_cookie.name}")
+                except Exception as e:
+                    print(f"⚠️ Erreur suppression: {e}")
 
 # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
 # Blacklist optionnelle : streamers à exclure
