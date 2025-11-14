@@ -66,6 +66,8 @@ from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings,
 print("🔧 Configuration du bot...")
 
 # Configuration Discord avec tous les événements
+USE_DISCORD_BOT = os.getenv("USE_DISCORD_BOT", "true").lower() == "true"
+
 discord_config = None
 if WEBHOOK:
     discord_config = Discord(
@@ -86,9 +88,13 @@ if WEBHOOK:
             Events.JOIN_RAID,
             Events.DROP_CLAIM,
             Events.CHAT_MENTION,
-        ]
+        ],
+        use_bot=USE_DISCORD_BOT  # Active le mode bot Discord
     )
-    print("✅ Notifications Discord activées pour tous les événements")
+    if USE_DISCORD_BOT:
+        print("✅ Mode Bot Discord activé (fiches éditables)")
+    else:
+        print("✅ Notifications Discord webhook activées")
 
 # Configuration avec priorités optimisées
 twitch_miner = TwitchChannelPointsMiner(
