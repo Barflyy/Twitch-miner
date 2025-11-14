@@ -766,7 +766,41 @@ async def update_channels():
         
         # Filtrer pour ne garder QUE les streamers en ligne
         online_streams = [(s, d) for s, d in sorted_streamers if d.get('online', False)]
+        online_streamer_names = {s for s, d in online_streams}
         print(f"📊 Traitement de {len(online_streams)} streams en ligne (sur {len(sorted_streamers)} total)")
+        
+        # NETTOYAGE AU DÉMARRAGE : Supprimer tous les salons hors ligne existants
+        # Cela garantit que seuls les salons des streamers en ligne restent
+        offline_count = 0
+        for i, streamer_name in enumerate(list(streamer_channels.keys())):
+            if streamer_name not in online_streamer_names:
+                # Ce streamer n'est pas en ligne, supprimer son salon
+                channel_id = streamer_channels[streamer_name]
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        await channel.delete()
+                        offline_count += 1
+                        print(f"🗑️  Nettoyage ({offline_count}): salon supprimé (hors ligne): {streamer_name}")
+                        # Rate limiting : attendre 2s toutes les 5 suppressions
+                        if offline_count % 5 == 0:
+                            print(f"⏸️  Rate limiting: pause de 2s après {offline_count} suppressions")
+                            await asyncio.sleep(2)
+                    except Exception as e:
+                        print(f"⚠️  Erreur suppression salon {streamer_name}: {e}")
+                
+                del streamer_channels[streamer_name]
+                if streamer_name in streamer_messages:
+                    del streamer_messages[streamer_name]
+                if streamer_name in streamer_data_cache:
+                    del streamer_data_cache[streamer_name]
+                streamer_name_lower = streamer_name.lower()
+                if streamer_name_lower in channels_index:
+                    del channels_index[streamer_name_lower]
+                channels_modified = True
+        
+        if offline_count > 0:
+            print(f"✅ Nettoyage terminé: {offline_count} salons hors ligne supprimés")
         
         # Mettre à jour ou créer les canaux SEULEMENT pour les streamers en ligne
         for index, (streamer, data) in enumerate(online_streams):
