@@ -769,38 +769,37 @@ async def update_channels():
         online_streamer_names = {s for s, d in online_streams}
         print(f"📊 Traitement de {len(online_streams)} streams en ligne (sur {len(sorted_streamers)} total)")
         
-        # NETTOYAGE AU DÉMARRAGE : Supprimer tous les salons hors ligne existants
-        # Cela garantit que seuls les salons des streamers en ligne restent
-        offline_count = 0
-        for i, streamer_name in enumerate(list(streamer_channels.keys())):
-            if streamer_name not in online_streamer_names:
-                # Ce streamer n'est pas en ligne, supprimer son salon
-                channel_id = streamer_channels[streamer_name]
+        # NETTOYAGE PROGRESSIF : Supprimer les salons hors ligne (un à la fois pour éviter rate limit)
+        # Seulement si on a des données de streamers chargées
+        if len(streamer_data) > 0:
+            # Compter combien il y a de salons à supprimer
+            offline_channels_to_delete = [s for s in streamer_channels.keys() if s not in online_streamer_names]
+            
+            # Supprimer seulement 1 salon par cycle (toutes les 30 secondes) pour éviter rate limit
+            if offline_channels_to_delete:
+                streamer_to_delete = offline_channels_to_delete[0]
+                channel_id = streamer_channels[streamer_to_delete]
                 channel = guild.get_channel(channel_id)
+                
                 if channel:
                     try:
                         await channel.delete()
-                        offline_count += 1
-                        print(f"🗑️  Nettoyage ({offline_count}): salon supprimé (hors ligne): {streamer_name}")
-                        # Rate limiting : attendre 2s toutes les 5 suppressions
-                        if offline_count % 5 == 0:
-                            print(f"⏸️  Rate limiting: pause de 2s après {offline_count} suppressions")
-                            await asyncio.sleep(2)
+                        print(f"🗑️  Nettoyage: salon supprimé (hors ligne): {streamer_to_delete} - Reste {len(offline_channels_to_delete)-1} salons à supprimer")
                     except Exception as e:
-                        print(f"⚠️  Erreur suppression salon {streamer_name}: {e}")
+                        print(f"⚠️  Erreur suppression salon {streamer_to_delete}: {e}")
                 
-                del streamer_channels[streamer_name]
-                if streamer_name in streamer_messages:
-                    del streamer_messages[streamer_name]
-                if streamer_name in streamer_data_cache:
-                    del streamer_data_cache[streamer_name]
-                streamer_name_lower = streamer_name.lower()
+                # Nettoyer les références
+                del streamer_channels[streamer_to_delete]
+                if streamer_to_delete in streamer_messages:
+                    del streamer_messages[streamer_to_delete]
+                if streamer_to_delete in streamer_data_cache:
+                    del streamer_data_cache[streamer_to_delete]
+                streamer_name_lower = streamer_to_delete.lower()
                 if streamer_name_lower in channels_index:
                     del channels_index[streamer_name_lower]
                 channels_modified = True
-        
-        if offline_count > 0:
-            print(f"✅ Nettoyage terminé: {offline_count} salons hors ligne supprimés")
+        else:
+            print("⏳ En attente des données du miner...")
         
         # Mettre à jour ou créer les canaux SEULEMENT pour les streamers en ligne
         for index, (streamer, data) in enumerate(online_streams):
