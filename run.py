@@ -2,10 +2,6 @@
 import logging
 import os
 import sys
-import requests
-from datetime import datetime
-from threading import Thread
-import time
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
@@ -30,30 +26,7 @@ print("🎮 Twitch Points Miner")
 print(f"👤 User: {username}")
 print(f"🔔 Discord: {'✅' if WEBHOOK else '❌'}")
 
-# Fonction Discord
-def send_discord(title, description, color):
-    if not WEBHOOK:
-        return
-    try:
-        requests.post(WEBHOOK, json={
-            "embeds": [{
-                "title": title,
-                "description": description[:2000],
-                "color": color,
-                "timestamp": datetime.utcnow().isoformat(),
-                "footer": {"text": "Twitch Miner"}
-            }]
-        }, timeout=5)
-    except:
-        pass
-
-# Notification de démarrage
-if WEBHOOK:
-    send_discord(
-        "🚀 Bot Démarré",
-        f"Mining pour **{username}**\nStreamer: JLTomy",
-        0x00FF00
-    )
+# Pas de fonction webhook - le bot Discord gère toutes les notifications
 
 # Importer le bot
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
@@ -65,13 +38,14 @@ from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings,
 
 print("🔧 Configuration du bot...")
 
-# Configuration Discord avec tous les événements
+# Configuration Discord - SEULEMENT Bot Discord (pas de webhook)
 USE_DISCORD_BOT = os.getenv("USE_DISCORD_BOT", "true").lower() == "true"
 
 discord_config = None
-if WEBHOOK:
+if USE_DISCORD_BOT:
+    # Mode Bot Discord uniquement (pas de spam webhook)
     discord_config = Discord(
-        webhook_api=WEBHOOK,
+        webhook_api="",  # Pas de webhook
         events=[
             Events.STREAMER_ONLINE,
             Events.STREAMER_OFFLINE,
@@ -89,12 +63,9 @@ if WEBHOOK:
             Events.DROP_CLAIM,
             Events.CHAT_MENTION,
         ],
-        use_bot=USE_DISCORD_BOT  # Active le mode bot Discord
+        use_bot=True  # Mode bot Discord avec fiches éditables
     )
-    if USE_DISCORD_BOT:
-        print("✅ Mode Bot Discord activé (fiches éditables)")
-    else:
-        print("✅ Notifications Discord webhook activées")
+    print("✅ Mode Bot Discord activé (fiches éditables, pas de spam webhook)")
 
 # Configuration avec priorités optimisées
 twitch_miner = TwitchChannelPointsMiner(
@@ -151,10 +122,6 @@ try:
         
 except KeyboardInterrupt:
     print("\n⏹️ Arrêt...")
-    if WEBHOOK:
-        send_discord("⏹️ Arrêt", f"Bot arrêté pour **{username}**", 0xFF0000)
 except Exception as e:
     print(f"❌ Erreur: {e}")
-    if WEBHOOK:
-        send_discord("❌ Erreur", str(e)[:500], 0xFF0000)
     raise

@@ -14,9 +14,9 @@ BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 DATA_FILE = "bot_data.json"
 
-# Intents
+# Intents (avec message_content pour les commandes)
 intents = discord.Intents.default()
-intents.message_content = True
+intents.message_content = True  # Nécessaire pour !status, !refresh, etc.
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
@@ -232,24 +232,59 @@ async def reset_cards(ctx):
     await ctx.send("✅ Fiches réinitialisées ! Utilisez `!refresh` pour les recréer.")
 
 @bot.command(name='status')
-async def status(ctx):
-    """Affiche le statut du bot"""
+async def status(ctx, streamer: str = None):
+    """Affiche le statut du bot ou d'un streamer spécifique
+    
+    Usage:
+        !status              - Statut général du bot
+        !status jltomy       - Statut du streamer JLTomy
+    """
     load_data()
     
-    total_streamers = len(streamer_data)
-    online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
+    # Si un streamer est spécifié
+    if streamer:
+        streamer_lower = streamer.lower()
+        
+        if streamer_lower not in streamer_data:
+            await ctx.send(f"❌ Streamer `{streamer}` non trouvé. Streamers disponibles: {', '.join(streamer_data.keys())}")
+            return
+        
+        # Créer un embed pour ce streamer
+        embed = create_streamer_embed(streamer_lower)
+        await ctx.send(embed=embed)
     
-    embed = discord.Embed(
-        title="📊 Statut du Bot",
-        color=0x3498DB,
-        timestamp=datetime.utcnow()
-    )
-    
-    embed.add_field(name="📺 Streamers", value=f"{online_streamers}/{total_streamers} en ligne", inline=True)
-    embed.add_field(name="🔄 Update", value="30 secondes", inline=True)
-    embed.add_field(name="📋 Fiches", value=str(len(streamer_cards)), inline=True)
-    
-    await ctx.send(embed=embed)
+    # Sinon, afficher le statut général
+    else:
+        total_streamers = len(streamer_data)
+        online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
+        
+        embed = discord.Embed(
+            title="📊 Statut du Bot Twitch Miner",
+            description="🟢 Bot actif et fonctionnel",
+            color=0x00FF00,
+            timestamp=datetime.utcnow()
+        )
+        
+        embed.add_field(name="📺 Streamers", value=f"{online_streamers}/{total_streamers} en ligne", inline=True)
+        embed.add_field(name="🔄 Update auto", value="30 secondes", inline=True)
+        embed.add_field(name="📋 Fiches actives", value=str(len(streamer_cards)), inline=True)
+        
+        # Liste des streamers
+        if streamer_data:
+            streamers_list = []
+            for name, data in streamer_data.items():
+                status_emoji = "🟢" if data.get('online', False) else "🔴"
+                streamers_list.append(f"{status_emoji} {name}")
+            
+            embed.add_field(
+                name="📋 Streamers suivis",
+                value="\n".join(streamers_list) if streamers_list else "Aucun",
+                inline=False
+            )
+        
+        embed.set_footer(text="Utilisez !status <streamer> pour voir un streamer spécifique")
+        
+        await ctx.send(embed=embed)
 
 @bot.command(name='help')
 async def help_command(ctx):
@@ -261,20 +296,26 @@ async def help_command(ctx):
     )
     
     embed.add_field(
+        name="!status",
+        value="Affiche l'état général du bot (🟢 on/off, streamers suivis)",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!status <streamer>",
+        value="Affiche la fiche détaillée d'un streamer\nExemple: `!status jltomy`",
+        inline=False
+    )
+    
+    embed.add_field(
         name="!refresh",
-        value="Force la mise à jour des fiches",
+        value="Force la mise à jour immédiate de toutes les fiches",
         inline=False
     )
     
     embed.add_field(
         name="!reset",
-        value="Réinitialise les fiches (créer de nouveaux messages)",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="!status",
-        value="Affiche le statut du bot",
+        value="Réinitialise les fiches (supprime et recrée les messages)",
         inline=False
     )
     
@@ -283,6 +324,8 @@ async def help_command(ctx):
         value="Affiche cette aide",
         inline=False
     )
+    
+    embed.set_footer(text="💡 Les fiches se mettent à jour automatiquement toutes les 30 secondes")
     
     await ctx.send(embed=embed)
 
