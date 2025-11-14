@@ -115,16 +115,29 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-print("🚀 Démarrage du mining en mode FOLLOWERS...")
-print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
+# Mode TEST : Liste de 50 streamers pour les tests (extraits des logs)
+# TODO: Remettre en mode FOLLOWERS après les tests
+test_streamers = [
+    "squeezie", "akaruu", "juliettearz", "gotaga", "doigby", "shaunz", "imsofresh",
+    "twitch_danss", "kashino", "evangelinemcnow", "xari", "niizumastyle", "armatorlk",
+    "zerator", "bagherajones", "sardoche", "solary", "akytio", "lekaizoku", "low4n",
+    "alderiate", "rhobalas_lol", "ums_twitch", "muat0ri", "skyyart", "mickalow",
+    "jeeltv", "kaydop", "lebouseuh", "5kayaz", "chelxie", "alpha54", "domingo",
+    "eversax", "ekon", "lestream", "yukisstv", "rocketbaguette", "rocketleague",
+    "jstkiss", "wizhum", "aztral", "nikof", "kennystream", "jirayalecochon",
+    "manaprod", "wazacubetv", "manuelferraratv", "amouranth", "locklear"
+]
+
+print("🚀 Démarrage du mining en mode TEST (50 streamers)...")
+print(f"📋 Le bot va suivre {len(test_streamers)} streamers pour les tests")
 
 try:
-    # Mode FOLLOWERS : Suit automatiquement tous les streamers que vous suivez sur Twitch
+    # Mode TEST : Liste de 50 streamers pour les tests
     # Les streamers dans blacklist.json seront exclus
     twitch_miner.mine(
-        streamers=[],  # Liste vide car on utilise followers=True
+        streamers=test_streamers,  # Liste de 50 streamers pour les tests
         blacklist=blacklist,  # Streamers à exclure
-        followers=True  # ✅ Active le mode auto-follow
+        followers=False  # Mode test : pas de followers automatiques
     )
         
 except KeyboardInterrupt:
