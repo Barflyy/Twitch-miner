@@ -308,6 +308,10 @@ async def update_stats_channel(guild):
     global stats_channel_id, stats_message_id
     
     try:
+        # Attendre que les données soient chargées
+        if len(streamer_data) == 0:
+            return  # Ne rien faire tant que les données ne sont pas prêtes
+        
         stats_category = guild.get_channel(STATS_CATEGORY_ID)
         if not stats_category or not isinstance(stats_category, discord.CategoryChannel):
             print(f"⚠️  Catégorie stats {STATS_CATEGORY_ID} introuvable")
@@ -430,6 +434,10 @@ async def update_stats_channels(guild):
         
         # Recharger les données pour avoir les stats à jour
         load_data()
+        
+        # Attendre que les données soient chargées
+        if len(streamer_data) == 0:
+            return  # Ne rien faire tant que les données ne sont pas prêtes
         
         # Compter les streams en ligne
         online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
