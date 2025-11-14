@@ -69,6 +69,15 @@ def load_data(force=False):
         print(f"❌ Erreur chargement data: {e}")
         streamer_data = {}
 
+def save_data():
+    """Sauvegarde les données des streamers dans le fichier JSON"""
+    try:
+        data = {'streamers': streamer_data}
+        with open(DATA_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"❌ Erreur sauvegarde data: {e}")
+
 def save_channels():
     """Sauvegarde les IDs des salons streamers"""
     try:
@@ -1852,11 +1861,17 @@ async def cleanup_inactive(ctx, days: int = 30, mode: str = "safe"):
             print(f"💾 Cache: {removed_from_cache} followers supprimés")
             
         except asyncio.TimeoutError:
-            await confirm_msg.delete()
+            try:
+                await confirm_msg.delete()
+            except:
+                pass
             await ctx.send("⏱️ Temps écoulé. Nettoyage annulé.", delete_after=5)
     
     except Exception as e:
-        await loading_msg.delete()
+        try:
+            await loading_msg.delete()
+        except:
+            pass
         await ctx.send(f"❌ Erreur: {e}", delete_after=15)
         print(f"❌ Erreur cleanup: {e}")
         import traceback
