@@ -7,11 +7,17 @@ from pathlib import Path
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
-auth_token = os.getenv("TWITCH_AUTH_TOKEN")  # Token OAuth au lieu de password
+auth_token = os.getenv("TWITCH_AUTH_TOKEN", "")  # Token OAuth optionnel
 
-if not username or not auth_token:
-    print("❌ Configuration manquante : TWITCH_USERNAME et TWITCH_AUTH_TOKEN requis")
+if not username:
+    print("❌ Configuration manquante : TWITCH_USERNAME requis")
     sys.exit(1)
+
+# Si pas de token OAuth, utiliser la méthode TV Login (plus fiable)
+if not auth_token or len(auth_token) < 30:
+    print("⚠️ TWITCH_AUTH_TOKEN absent ou invalide")
+    print("💡 Le bot va utiliser la méthode TV Login (code d'activation)")
+    auth_token = None  # Force l'utilisation du TV Login
 
 # Supprimer les cookies obsolètes au démarrage (évite ERR_BADAUTH)
 cookies_dir = Path("cookies")

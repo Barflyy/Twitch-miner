@@ -181,6 +181,8 @@ class TwitchLogin(object):
     def set_token(self, new_token):
         self.token = new_token
         self.session.headers.update({"Authorization": f"Bearer {self.token}"})
+        # Ajouter le token dans les cookies pour get_auth_token()
+        self.session.cookies.set("auth-token", new_token)
 
     # def send_login_request(self, json_data):
     def send_oauth_request(self, url, json_data):
