@@ -2,29 +2,33 @@
 import logging
 import os
 import sys
+import json
+from pathlib import Path
 
 # Configuration
 username = os.getenv("TWITCH_USERNAME")
 auth_token = os.getenv("TWITCH_AUTH_TOKEN")  # Token OAuth au lieu de password
-streamers_list = os.getenv("STREAMERS", "")
-WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
-USE_FOLLOWERS = os.getenv("USE_FOLLOWERS", "true").lower() == "true"
 
 if not username or not auth_token:
     print("❌ Configuration manquante : TWITCH_USERNAME et TWITCH_AUTH_TOKEN requis")
     sys.exit(1)
 
-# Parser les streamers ou utiliser followers
-if USE_FOLLOWERS:
-    streamers = []  # Vide = utiliser tous les followers
-    print("📺 Mode: TOUS LES FOLLOWERS")
+# Charger la liste des streamers depuis le fichier (géré par !add/!remove)
+streamers_file = Path("streamers_list.json")
+if streamers_file.exists():
+    with open(streamers_file, 'r') as f:
+        streamers = json.load(f)
+    print(f"📺 Streamers depuis fichier: {', '.join(streamers) if streamers else 'Aucun'}")
 else:
-    streamers = [s.strip() for s in streamers_list.split(",") if s.strip()]
-    print(f"📺 Streamers spécifiques: {', '.join(streamers)}")
+    # Par défaut : JLTomy (comme avant)
+    streamers = ["jltomy"]
+    # Créer le fichier pour la première fois
+    with open(streamers_file, 'w') as f:
+        json.dump(streamers, f, indent=2)
+    print(f"📺 Streamers par défaut: {', '.join(streamers)}")
 
 print("🎮 Twitch Points Miner")
 print(f"👤 User: {username}")
-print(f"🔔 Discord: {'✅' if WEBHOOK else '❌'}")
 
 # Pas de fonction webhook - le bot Discord gère toutes les notifications
 
@@ -114,9 +118,16 @@ twitch_miner = TwitchChannelPointsMiner(
 print("🚀 Démarrage du mining...")
 
 try:
-    # Suivre uniquement JLTomy
+    # Suivre les streamers depuis le fichier streamers_list.json
+    if not streamers:
+        print("⚠️  Aucun streamer à suivre ! Utilisez !add <streamer> sur Discord")
+        sys.exit(1)
+    
+    streamer_objects = [Streamer(s) for s in streamers]
+    print(f"🚀 Démarrage du mining pour {len(streamers)} streamer(s)...")
+    
     twitch_miner.mine(
-        [Streamer("JLTomy")],
+        streamer_objects,
         followers=False
     )
         

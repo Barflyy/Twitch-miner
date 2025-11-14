@@ -146,6 +146,7 @@ chromedriver*
 # Bot Discord data (contient tokens et données)
 bot_data.json
 streamer_cards.json
+streamers_list.json
 start_bot.sh
 start_miner.sh
 .env.discord

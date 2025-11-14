@@ -157,6 +157,17 @@ async def on_ready():
     load_cards()
     load_data()
     
+    # Clear le canal au démarrage (supprimer tous les anciens messages)
+    if CHANNEL_ID and CHANNEL_ID != 0:
+        try:
+            channel = bot.get_channel(CHANNEL_ID)
+            if channel:
+                print("🧹 Nettoyage du canal (suppression anciens messages)...")
+                deleted = await channel.purge(limit=100)  # Supprimer max 100 messages
+                print(f"✅ {len(deleted)} messages supprimés")
+        except Exception as e:
+            print(f"⚠️  Erreur clear canal: {e}")
+    
     # Démarrer la boucle de mise à jour
     if not update_cards.is_running():
         update_cards.start()
@@ -319,6 +330,136 @@ async def status(ctx, streamer: str = None):
         
         await ctx.send(embed=embed)
 
+@bot.command(name='add')
+async def add_streamer(ctx, streamer: str):
+    """Ajoute un streamer à suivre"""
+    # Supprimer la commande
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    streamer_lower = streamer.lower()
+    
+    # Charger la liste actuelle
+    streamers_file = Path("streamers_list.json")
+    if streamers_file.exists():
+        with open(streamers_file, 'r') as f:
+            streamers_list = json.load(f)
+    else:
+        streamers_list = []
+    
+    # Vérifier si déjà présent
+    if streamer_lower in streamers_list:
+        await ctx.send(f"⚠️  **{streamer}** est déjà dans la liste !", delete_after=5)
+        return
+    
+    # Ajouter
+    streamers_list.append(streamer_lower)
+    
+    # Sauvegarder
+    with open(streamers_file, 'w') as f:
+        json.dump(streamers_list, f, indent=2)
+    
+    # Créer une fiche immédiatement (vide en attendant les données)
+    load_data()
+    if streamer_lower not in streamer_data:
+        streamer_data[streamer_lower] = {
+            'online': False,
+            'balance': 0,
+            'starting_balance': 0,
+            'total_earned': 0,
+            'session_points': 0,
+            'watch_points': 0,
+            'bonus_points': 0,
+            'bets_placed': 0,
+            'bets_won': 0,
+            'bets_lost': 0
+        }
+    
+    # Créer la fiche
+    embed = create_streamer_embed(streamer_lower)
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        message = await channel.send(embed=embed)
+        streamer_cards[streamer_lower] = message.id
+        save_cards()
+    
+    await ctx.send(f"✅ **{streamer}** ajouté ! Redémarrez le miner pour qu'il mine ce streamer.", delete_after=10)
+
+@bot.command(name='remove')
+async def remove_streamer(ctx, streamer: str):
+    """Retire un streamer de la liste"""
+    # Supprimer la commande
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    streamer_lower = streamer.lower()
+    
+    # Charger la liste actuelle
+    streamers_file = Path("streamers_list.json")
+    if streamers_file.exists():
+        with open(streamers_file, 'r') as f:
+            streamers_list = json.load(f)
+    else:
+        streamers_list = []
+    
+    # Vérifier si présent
+    if streamer_lower not in streamers_list:
+        await ctx.send(f"⚠️  **{streamer}** n'est pas dans la liste !", delete_after=5)
+        return
+    
+    # Retirer
+    streamers_list.remove(streamer_lower)
+    
+    # Sauvegarder
+    with open(streamers_file, 'w') as f:
+        json.dump(streamers_list, f, indent=2)
+    
+    # Supprimer la fiche
+    if streamer_lower in streamer_cards:
+        try:
+            channel = bot.get_channel(CHANNEL_ID)
+            message = await channel.fetch_message(streamer_cards[streamer_lower])
+            await message.delete()
+            del streamer_cards[streamer_lower]
+            save_cards()
+        except:
+            pass
+    
+    await ctx.send(f"✅ **{streamer}** retiré ! Redémarrez le miner pour appliquer.", delete_after=10)
+
+@bot.command(name='list')
+async def list_streamers(ctx):
+    """Liste tous les streamers suivis"""
+    # Supprimer la commande
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    # Charger la liste
+    streamers_file = Path("streamers_list.json")
+    if streamers_file.exists():
+        with open(streamers_file, 'r') as f:
+            streamers_list = json.load(f)
+    else:
+        streamers_list = []
+    
+    if not streamers_list:
+        await ctx.send("📋 Aucun streamer dans la liste.", delete_after=5)
+        return
+    
+    embed = discord.Embed(
+        title="📋 Streamers Suivis",
+        description="\n".join(f"• {s}" for s in streamers_list),
+        color=0x9B59B6
+    )
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name='help')
 async def help_command(ctx):
     """Affiche l'aide"""
@@ -336,25 +477,43 @@ async def help_command(ctx):
     
     embed.add_field(
         name="!status",
-        value="Affiche l'état général du bot (🟢 on/off, streamers suivis)",
+        value="Affiche l'état général du bot",
         inline=False
     )
     
     embed.add_field(
         name="!status <streamer>",
-        value="Affiche la fiche détaillée d'un streamer\nExemple: `!status jltomy`",
+        value="Affiche la fiche d'un streamer\nEx: `!status jltomy`",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!add <streamer>",
+        value="Ajoute un streamer à suivre\nEx: `!add xqc`",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!remove <streamer>",
+        value="Retire un streamer\nEx: `!remove xqc`",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!list",
+        value="Liste tous les streamers suivis",
         inline=False
     )
     
     embed.add_field(
         name="!refresh",
-        value="Force la mise à jour immédiate de toutes les fiches",
+        value="Force la mise à jour des fiches",
         inline=False
     )
     
     embed.add_field(
         name="!reset",
-        value="Réinitialise les fiches (supprime et recrée les messages)",
+        value="Réinitialise toutes les fiches",
         inline=False
     )
     
@@ -364,7 +523,7 @@ async def help_command(ctx):
         inline=False
     )
     
-    embed.set_footer(text="💡 Les fiches se mettent à jour automatiquement toutes les 30 secondes")
+    embed.set_footer(text="💡 Fiches auto-update 30s • Les commandes se suppriment automatiquement")
     
     await ctx.send(embed=embed)
 
