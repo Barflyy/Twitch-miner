@@ -56,76 +56,40 @@ if WEBHOOK:
         0x00FF00
     )
 
-# Handler Discord pour les logs
-class DiscordLogHandler(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.last_messages = {}
-        
-    def emit(self, record):
-        try:
-            msg = record.getMessage()
-            
-            # Anti-spam
-            msg_key = msg[:50]
-            now = time.time()
-            if msg_key in self.last_messages:
-                if now - self.last_messages[msg_key] < 30:
-                    return
-            self.last_messages[msg_key] = now
-            
-            # Parser les messages
-            if "goes ONLINE" in msg or "is ONLINE" in msg:
-                import re
-                match = re.search(r'\[(\w+)\].*?ONLINE', msg)
-                if match:
-                    streamer = match.group(1)
-                    send_discord("🟢 En Ligne", f"**{streamer}** est en ligne !", 0x00FF00)
-                    print(f"🟢 {streamer} ONLINE")
-            
-            elif "goes OFFLINE" in msg or "is OFFLINE" in msg:
-                import re
-                match = re.search(r'\[(\w+)\].*?OFFLINE', msg)
-                if match:
-                    streamer = match.group(1)
-                    send_discord("🔴 Hors Ligne", f"**{streamer}** est hors ligne", 0xFF0000)
-                    print(f"🔴 {streamer} OFFLINE")
-            
-            elif "Earned" in msg and "points" in msg:
-                import re
-                match = re.search(r'Earned\s+(\d+)\s+points.*?\[(\w+)\]', msg)
-                if match:
-                    points = match.group(1)
-                    streamer = match.group(2)
-                    send_discord("💰 Points", f"**+{points}** points sur **{streamer}**", 0xFFD700)
-                    print(f"💰 +{points} points ({streamer})")
-            
-            elif "Claimed" in msg and "bonus" in msg:
-                import re
-                match = re.search(r'Claimed\s+(\d+).*?\[(\w+)\]', msg)
-                if match:
-                    points = match.group(1)
-                    streamer = match.group(2)
-                    send_discord("🎁 Bonus", f"**+{points}** bonus sur **{streamer}**", 0x9B59B6)
-                    print(f"🎁 +{points} bonus ({streamer})")
-            
-        except Exception:
-            pass
-
-# Configurer le handler
-discord_handler = DiscordLogHandler()
-discord_handler.setLevel(logging.INFO)
-logging.getLogger().addHandler(discord_handler)
-logging.getLogger("TwitchChannelPointsMiner").addHandler(discord_handler)
-
 # Importer le bot
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
-from TwitchChannelPointsMiner.classes.Settings import Priority
+from TwitchChannelPointsMiner.classes.Settings import Priority, Events
+from TwitchChannelPointsMiner.classes.Discord import Discord
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition
 
 print("🔧 Configuration du bot...")
+
+# Configuration Discord avec tous les événements
+discord_config = None
+if WEBHOOK:
+    discord_config = Discord(
+        webhook_api=WEBHOOK,
+        events=[
+            Events.STREAMER_ONLINE,
+            Events.STREAMER_OFFLINE,
+            Events.GAIN_FOR_RAID,
+            Events.GAIN_FOR_CLAIM,
+            Events.GAIN_FOR_WATCH,
+            Events.GAIN_FOR_WATCH_STREAK,
+            Events.BET_WIN,
+            Events.BET_LOSE,
+            Events.BET_REFUND,
+            Events.BET_START,
+            Events.BONUS_CLAIM,
+            Events.MOMENT_CLAIM,
+            Events.JOIN_RAID,
+            Events.DROP_CLAIM,
+            Events.CHAT_MENTION,
+        ]
+    )
+    print("✅ Notifications Discord activées pour tous les événements")
 
 # Configuration avec priorités optimisées
 twitch_miner = TwitchChannelPointsMiner(
@@ -150,6 +114,7 @@ twitch_miner = TwitchChannelPointsMiner(
             BET_lose="red",
             BET_won="green"
         ),
+        discord=discord_config,  # ✅ Configuration Discord intégrée
     ),
     streamer_settings=StreamerSettings(
         make_predictions=True,
