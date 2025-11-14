@@ -349,6 +349,7 @@ async def update_stats_channel(guild):
             
             if existing_channel:
                 stats_channel_id = existing_channel.id
+                channel = existing_channel
                 print(f"🔍 Salon stats existant trouvé: {channel_name}")
             else:
                 # Créer le nouveau salon
@@ -362,9 +363,8 @@ async def update_stats_channel(guild):
                 save_channels()
         else:
             channel = guild.get_channel(stats_channel_id)
-        
-        if not channel:
-            return
+            if not channel:
+                return
         
         # Créer ou mettre à jour le message de stats
         embed = create_stats_embed()
@@ -442,21 +442,25 @@ async def update_stats_channels(guild):
         # Compter les streams en ligne
         online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
         
-        # Nettoyage : Supprimer les anciens salons obsolètes
-        obsolete_names = ["🔴-streams-hors-ligne", "👥-followers-", "🟢-streams-en-ligne"]
+        # Nettoyage : Supprimer TOUS les salons obsolètes (followers, streams hors ligne, etc.)
         for ch in stats_category.channels:
             if isinstance(ch, discord.TextChannel):
-                # Supprimer si le nom correspond à un ancien format
                 should_delete = False
-                for obsolete in obsolete_names:
-                    if obsolete in ch.name and "│" not in ch.name:  # Ancien format sans │
-                        should_delete = True
-                        break
+                
+                # Supprimer si c'est un salon de followers (👥 ou "followers")
+                if "👥" in ch.name or "followers" in ch.name.lower():
+                    should_delete = True
+                # Supprimer si c'est un ancien salon sans │
+                elif "streams-" in ch.name and "│" not in ch.name:
+                    should_delete = True
+                # Supprimer l'ancien salon statistiques-globales
+                elif ch.name == "📊-statistiques-globales":
+                    should_delete = True
                 
                 if should_delete:
                     try:
                         await ch.delete()
-                        print(f"🗑️  Salon obsolète supprimé: {ch.name}")
+                        print(f"🗑️  [NETTOYAGE STATS] Salon obsolète supprimé: {ch.name}")
                     except Exception as e:
                         print(f"⚠️  Erreur suppression salon obsolète: {e}")
         
@@ -723,35 +727,42 @@ async def update_channels():
         online_streamer_names = {s for s, d in online_streams}
         print(f"📊 Traitement de {len(online_streams)} streams en ligne (sur {len(sorted_streamers)} total)")
         
-        # NETTOYAGE PROGRESSIF : Supprimer les salons hors ligne (un à la fois pour éviter rate limit)
-        # Seulement si on a des données de streamers chargées
+        # NETTOYAGE : Supprimer TOUS les salons hors ligne
         if len(streamer_data) > 0:
-            # Compter combien il y a de salons à supprimer
             offline_channels_to_delete = [s for s in streamer_channels.keys() if s not in online_streamer_names]
             
-            # Supprimer seulement 1 salon par cycle (toutes les 30 secondes) pour éviter rate limit
             if offline_channels_to_delete:
-                streamer_to_delete = offline_channels_to_delete[0]
-                channel_id = streamer_channels[streamer_to_delete]
-                channel = guild.get_channel(channel_id)
+                print(f"🗑️  [NETTOYAGE] {len(offline_channels_to_delete)} salon(s) hors ligne à supprimer")
+                deleted_count = 0
                 
-                if channel:
-                    try:
-                        await channel.delete()
-                        print(f"🗑️  Nettoyage: salon supprimé (hors ligne): {streamer_to_delete} - Reste {len(offline_channels_to_delete)-1} salons à supprimer")
-                    except Exception as e:
-                        print(f"⚠️  Erreur suppression salon {streamer_to_delete}: {e}")
+                for streamer_to_delete in offline_channels_to_delete:
+                    channel_id = streamer_channels[streamer_to_delete]
+                    channel = guild.get_channel(channel_id)
+                    
+                    if channel:
+                        try:
+                            await channel.delete()
+                            deleted_count += 1
+                            print(f"🗑️  [{deleted_count}] Salon supprimé (hors ligne): {streamer_to_delete}")
+                            # Rate limiting : pause toutes les 3 suppressions
+                            if deleted_count % 3 == 0:
+                                await asyncio.sleep(1)
+                        except Exception as e:
+                            print(f"⚠️  Erreur suppression {streamer_to_delete}: {e}")
+                    
+                    # Nettoyer les références
+                    del streamer_channels[streamer_to_delete]
+                    if streamer_to_delete in streamer_messages:
+                        del streamer_messages[streamer_to_delete]
+                    if streamer_to_delete in streamer_data_cache:
+                        del streamer_data_cache[streamer_to_delete]
+                    streamer_name_lower = streamer_to_delete.lower()
+                    if streamer_name_lower in channels_index:
+                        del channels_index[streamer_name_lower]
+                    channels_modified = True
                 
-                # Nettoyer les références
-                del streamer_channels[streamer_to_delete]
-                if streamer_to_delete in streamer_messages:
-                    del streamer_messages[streamer_to_delete]
-                if streamer_to_delete in streamer_data_cache:
-                    del streamer_data_cache[streamer_to_delete]
-                streamer_name_lower = streamer_to_delete.lower()
-                if streamer_name_lower in channels_index:
-                    del channels_index[streamer_name_lower]
-                channels_modified = True
+                if deleted_count > 0:
+                    print(f"✅ [NETTOYAGE] {deleted_count} salon(s) supprimé(s)")
         else:
             print("⏳ En attente des données du miner...")
         
