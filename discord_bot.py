@@ -455,19 +455,24 @@ async def update_stats_channels(guild):
                 except Exception as e:
                     print(f"⚠️  Erreur suppression salon obsolète: {e}")
         
-        # Salon 1: Streams en ligne
-        channel_name_online = "🟢-streams-en-ligne"
+        # Salon 1: Streams en ligne - LE NOM DU SALON CONTIENT LA STAT
+        channel_name_online = f"🟢│{online_streamers}-streams-en-ligne"
+        
         if not online_count_channel_id:
-            # Chercher si le salon existe déjà
+            # Chercher si un salon avec un nom similaire existe déjà
             existing_channel = None
             for ch in stats_category.channels:
-                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_online:
+                if isinstance(ch, discord.TextChannel) and "-streams-en-ligne" in ch.name:
                     existing_channel = ch
                     break
             
             if existing_channel:
                 online_count_channel_id = existing_channel.id
-                print(f"🔍 Salon existant trouvé: {channel_name_online}")
+                print(f"🔍 Salon existant trouvé: {existing_channel.name}")
+                # Mettre à jour le nom avec la nouvelle valeur
+                if existing_channel.name != channel_name_online:
+                    await existing_channel.edit(name=channel_name_online)
+                    print(f"🔄 Salon renommé: {channel_name_online}")
             else:
                 channel = await guild.create_text_channel(
                     name=channel_name_online,
@@ -481,38 +486,31 @@ async def update_stats_channels(guild):
             channel = guild.get_channel(online_count_channel_id)
             if not channel:
                 online_count_channel_id = None
-                online_count_message_id = None
+            else:
+                # Mettre à jour le nom du salon avec la nouvelle valeur
+                if channel.name != channel_name_online:
+                    await channel.edit(name=channel_name_online)
+                    print(f"🔄 Stats mise à jour: {channel_name_online}")
         
-        if online_count_channel_id:
-            channel = guild.get_channel(online_count_channel_id)
-            if channel:
-                # Créer ou mettre à jour le message
-                message_text = f"# 🟢 **{online_streamers}** streams en ligne"
-                if online_count_message_id:
-                    try:
-                        message = await channel.fetch_message(online_count_message_id)
-                        await message.edit(content=message_text)
-                    except discord.NotFound:
-                        message = await channel.send(message_text)
-                        online_count_message_id = message.id
-                        save_channels()
-                else:
-                    message = await channel.send(message_text)
-                    online_count_message_id = message.id
-                    save_channels()
+        # Salon 2: Followers - LE NOM DU SALON CONTIENT LA STAT
+        followers_display = f"{followers_count:,}".replace(',', ' ') if followers_count > 0 else "0"
+        channel_name_followers = f"👥│{followers_display}-followers-{TWITCH_USERNAME_TO_TRACK.lower()}"
         
-        # Salon 2: Followers Barflyy_
-        channel_name_followers = f"👥-followers-{TWITCH_USERNAME_TO_TRACK.lower()}"
         if not followers_count_channel_id:
+            # Chercher si un salon avec un nom similaire existe déjà
             existing_channel = None
             for ch in stats_category.channels:
-                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_followers:
+                if isinstance(ch, discord.TextChannel) and f"-followers-{TWITCH_USERNAME_TO_TRACK.lower()}" in ch.name:
                     existing_channel = ch
                     break
             
             if existing_channel:
                 followers_count_channel_id = existing_channel.id
-                print(f"🔍 Salon existant trouvé: {channel_name_followers}")
+                print(f"🔍 Salon existant trouvé: {existing_channel.name}")
+                # Mettre à jour le nom avec la nouvelle valeur
+                if existing_channel.name != channel_name_followers:
+                    await existing_channel.edit(name=channel_name_followers)
+                    print(f"🔄 Salon renommé: {channel_name_followers}")
             else:
                 channel = await guild.create_text_channel(
                     name=channel_name_followers,
@@ -526,25 +524,11 @@ async def update_stats_channels(guild):
             channel = guild.get_channel(followers_count_channel_id)
             if not channel:
                 followers_count_channel_id = None
-                followers_count_message_id = None
-        
-        if followers_count_channel_id:
-            channel = guild.get_channel(followers_count_channel_id)
-            if channel:
-                followers_display = f"{followers_count:,}".replace(',', ' ') if followers_count > 0 else "0"
-                message_text = f"# 👥 **{followers_display}** followers pour **{TWITCH_USERNAME_TO_TRACK}**"
-                if followers_count_message_id:
-                    try:
-                        message = await channel.fetch_message(followers_count_message_id)
-                        await message.edit(content=message_text)
-                    except discord.NotFound:
-                        message = await channel.send(message_text)
-                        followers_count_message_id = message.id
-                        save_channels()
-                else:
-                    message = await channel.send(message_text)
-                    followers_count_message_id = message.id
-                    save_channels()
+            else:
+                # Mettre à jour le nom du salon avec la nouvelle valeur
+                if channel.name != channel_name_followers:
+                    await channel.edit(name=channel_name_followers)
+                    print(f"🔄 Stats mise à jour: {channel_name_followers}")
                     
     except Exception as e:
         print(f"❌ Erreur update_stats_channels: {e}")
