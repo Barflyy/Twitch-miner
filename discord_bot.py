@@ -26,6 +26,8 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 streamer_channels = {}  # {streamer: channel_id}
 streamer_messages = {}  # {streamer: message_id} (message dans le salon)
 streamer_data = {}   # {streamer: {stats}}
+category_channels = {}  # {category_id: [channel_ids]} - Suivi des canaux par catégorie
+MAX_CHANNELS_PER_CATEGORY = 50  # Limite Discord
 
 def load_data():
     """Charge les données depuis le fichier JSON"""
@@ -44,7 +46,8 @@ def save_channels():
     try:
         data = {
             'channels': streamer_channels,
-            'messages': streamer_messages
+            'messages': streamer_messages,
+            'category_channels': category_channels
         }
         with open('streamer_channels.json', 'w') as f:
             json.dump(data, f)
@@ -53,17 +56,19 @@ def save_channels():
 
 def load_channels():
     """Charge les IDs des salons streamers"""
-    global streamer_channels, streamer_messages
+    global streamer_channels, streamer_messages, category_channels
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
                 data = json.load(f)
                 streamer_channels = data.get('channels', {})
                 streamer_messages = data.get('messages', {})
+                category_channels = data.get('category_channels', {})
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
         streamer_channels = {}
         streamer_messages = {}
+        category_channels = {}
 
 def create_streamer_embed(streamer: str) -> discord.Embed:
     """Crée un embed pour un streamer"""
@@ -180,6 +185,32 @@ async def on_ready():
     await update_channels()
     print("✅ Salons streamers créés/mis à jour")
 
+async def get_or_create_category(guild, base_category, category_index):
+    """Récupère ou crée une catégorie pour les streamers"""
+    if category_index == 0:
+        # Utiliser la catégorie de base
+        return base_category
+    
+    # Chercher une catégorie existante avec le bon nom
+    category_name = f"{base_category.name} ({category_index + 1})"
+    for cat in guild.categories:
+        if cat.name == category_name:
+            return cat
+    
+    # Créer une nouvelle catégorie
+    try:
+        new_category = await guild.create_category(category_name)
+        print(f"📁 Catégorie créée: {category_name}")
+        return new_category
+    except Exception as e:
+        print(f"❌ Erreur création catégorie {category_name}: {e}")
+        return base_category
+
+async def get_category_for_channel(guild, base_category, streamer_index):
+    """Détermine dans quelle catégorie placer un canal selon son index"""
+    category_index = streamer_index // MAX_CHANNELS_PER_CATEGORY
+    return await get_or_create_category(guild, base_category, category_index)
+
 @tasks.loop(seconds=30)
 async def update_channels():
     """Met à jour les salons streamers selon leur statut"""
@@ -187,21 +218,34 @@ async def update_channels():
         return
     
     try:
-        category = bot.get_channel(CATEGORY_ID)
-        if not category or not isinstance(category, discord.CategoryChannel):
+        base_category = bot.get_channel(CATEGORY_ID)
+        if not base_category or not isinstance(base_category, discord.CategoryChannel):
             print(f"❌ Catégorie {CATEGORY_ID} introuvable ou invalide")
             return
         
-        guild = category.guild
+        guild = base_category.guild
         
         # Recharger les données
         load_data()
         
-        # Pour chaque streamer dans les données
-        for streamer, data in streamer_data.items():
+        # Trier les streamers : en ligne d'abord, puis hors ligne
+        sorted_streamers = sorted(
+            streamer_data.items(),
+            key=lambda x: (not x[1].get('online', False), x[0].lower())
+        )
+        
+        # Mettre à jour ou créer les canaux
+        for index, (streamer, data) in enumerate(sorted_streamers):
+            # Petit délai pour éviter les rate limits Discord (max 5 req/s)
+            if index > 0 and index % 5 == 0:
+                await asyncio.sleep(1)
+            
             is_online = data.get('online', False)
             status_emoji = "🟢" if is_online else "🔴"
             channel_name = f"{status_emoji}-{streamer.lower()}"
+            
+            # Déterminer la catégorie appropriée
+            target_category = await get_category_for_channel(guild, base_category, index)
             
             # Si le salon existe déjà
             if streamer in streamer_channels:
@@ -209,6 +253,14 @@ async def update_channels():
                 channel = guild.get_channel(channel_id)
                 
                 if channel:
+                    # Vérifier si le canal doit être déplacé vers une autre catégorie
+                    if channel.category != target_category:
+                        try:
+                            await channel.edit(category=target_category)
+                            print(f"🔄 Canal déplacé: {channel_name} → {target_category.name}")
+                        except Exception as e:
+                            print(f"⚠️  Erreur déplacement canal {channel_name}: {e}")
+                    
                     # Mettre à jour le nom si le statut a changé
                     if channel.name != channel_name:
                         await channel.edit(name=channel_name)
@@ -234,9 +286,28 @@ async def update_channels():
                 else:
                     # Le salon a été supprimé, le recréer
                     print(f"🔄 Recréation du salon: {channel_name}")
+                    try:
+                        channel = await guild.create_text_channel(
+                            name=channel_name,
+                            category=target_category
+                        )
+                        streamer_channels[streamer] = channel.id
+                        
+                        # Créer le message initial
+                        embed = create_streamer_embed(streamer)
+                        message = await channel.send(embed=embed)
+                        streamer_messages[streamer] = message.id
+                        save_channels()
+                    except Exception as e:
+                        print(f"❌ Erreur création salon {channel_name}: {e}")
+            
+            else:
+                # Créer un nouveau salon pour ce streamer
+                print(f"✅ Création du salon: {channel_name}")
+                try:
                     channel = await guild.create_text_channel(
                         name=channel_name,
-                        category=category
+                        category=target_category
                     )
                     streamer_channels[streamer] = channel.id
                     
@@ -245,21 +316,25 @@ async def update_channels():
                     message = await channel.send(embed=embed)
                     streamer_messages[streamer] = message.id
                     save_channels()
-            
-            else:
-                # Créer un nouveau salon pour ce streamer
-                print(f"✅ Création du salon: {channel_name}")
-                channel = await guild.create_text_channel(
-                    name=channel_name,
-                    category=category
-                )
-                streamer_channels[streamer] = channel.id
-                
-                # Créer le message initial
-                embed = create_streamer_embed(streamer)
-                message = await channel.send(embed=embed)
-                streamer_messages[streamer] = message.id
-                save_channels()
+                except Exception as e:
+                    print(f"❌ Erreur création salon {channel_name}: {e}")
+                    # Si erreur de limite, essayer la catégorie suivante
+                    if "Maximum number of channels" in str(e):
+                        try:
+                            # Essayer la catégorie suivante
+                            next_category = await get_category_for_channel(guild, base_category, index + 1)
+                            channel = await guild.create_text_channel(
+                                name=channel_name,
+                                category=next_category
+                            )
+                            streamer_channels[streamer] = channel.id
+                            embed = create_streamer_embed(streamer)
+                            message = await channel.send(embed=embed)
+                            streamer_messages[streamer] = message.id
+                            save_channels()
+                            print(f"✅ Salon créé dans catégorie suivante: {channel_name}")
+                        except Exception as e2:
+                            print(f"❌ Erreur création salon dans catégorie suivante: {e2}")
         
         # Supprimer les salons des streamers qui ne sont plus dans la liste
         for streamer in list(streamer_channels.keys()):
@@ -383,10 +458,15 @@ async def status(ctx, streamer: str = None):
         embed.add_field(name="🔄 Update auto", value="30 secondes", inline=True)
         embed.add_field(name="📋 Salons actifs", value=str(len(streamer_channels)), inline=True)
         
-        # Liste des streamers
+        # Liste des streamers (triés : en ligne d'abord)
         if streamer_data:
             streamers_list = []
-            for name, data in streamer_data.items():
+            # Trier : en ligne d'abord, puis hors ligne
+            sorted_streamers = sorted(
+                streamer_data.items(),
+                key=lambda x: (not x[1].get('online', False), x[0].lower())
+            )
+            for name, data in sorted_streamers:
                 status_emoji = "🟢" if data.get('online', False) else "🔴"
                 streamers_list.append(f"{status_emoji} {name}")
             
