@@ -49,10 +49,9 @@ def send_discord(title, description, color):
 
 # Notification de démarrage
 if WEBHOOK:
-    mode_text = "🌟 **TOUS LES FOLLOWERS**" if USE_FOLLOWERS else f"Streamers: {', '.join(streamers)}"
     send_discord(
         "🚀 Bot Démarré",
-        f"Mining pour **{username}**\n{mode_text}",
+        f"Mining pour **{username}**\nStreamer: JLTomy",
         0x00FF00
     )
 
@@ -138,21 +137,11 @@ twitch_miner = TwitchChannelPointsMiner(
 print("🚀 Démarrage du mining...")
 
 try:
-    if USE_FOLLOWERS:
-        # ⭐ UTILISER TOUS LES FOLLOWERS
-        print("📋 Récupération de tous les followers...")
-        twitch_miner.mine(
-            [],                    # Liste vide = utiliser les followers
-            followers=True,        # ⭐ ACTIVER LE MODE FOLLOWERS
-            blacklist=[],          # Optionnel : blacklist de streamers à ignorer
-        )
-    else:
-        # Utiliser la liste spécifique
-        streamer_objects = [Streamer(s) for s in streamers]
-        twitch_miner.mine(
-            streamer_objects,
-            followers=False        # Mode normal
-        )
+    # Suivre uniquement JLTomy
+    twitch_miner.mine(
+        [Streamer("JLTomy")],
+        followers=False
+    )
         
 except KeyboardInterrupt:
     print("\n⏹️ Arrêt...")
