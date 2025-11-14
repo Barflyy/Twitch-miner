@@ -73,6 +73,10 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
     watch_points = data.get('watch_points', 0)
     bonus_points = data.get('bonus_points', 0)
     
+    # Points totaux gagnés depuis le début
+    total_earned = data.get('total_earned', 0)
+    starting_balance = data.get('starting_balance', 0)
+    
     # Paris
     bets_placed = data.get('bets_placed', 0)
     bets_won = data.get('bets_won', 0)
@@ -88,14 +92,18 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
         timestamp=datetime.utcnow()
     )
     
-    # Solde
+    # Solde avec gains totaux depuis le début
+    solde_text = f"**{balance_display}** points"
+    if total_earned > 0:
+        solde_text += f"\n🔼 **+{total_earned:,}** gagnés au total".replace(',', ' ')
+    
     embed.add_field(
-        name="💎 Solde Total",
-        value=f"**{balance_display}** points",
+        name="💎 Solde",
+        value=solde_text,
         inline=False
     )
     
-    # Session
+    # Session en cours
     if session_points > 0:
         session_text = f"**+{session_points}** points\n"
         if watch_points > 0:
@@ -104,7 +112,7 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
             session_text += f"└ Bonus: +{bonus_points}\n"
         
         embed.add_field(
-            name="💰 Gains Session",
+            name="💰 Session Actuelle",
             value=session_text,
             inline=True
         )
@@ -153,7 +161,14 @@ async def on_ready():
     if not update_cards.is_running():
         update_cards.start()
     
-    print("🔄 Mise à jour automatique activée")
+    print("🔄 Mise à jour automatique activée (30 secondes)")
+    
+    # Afficher les fiches immédiatement au démarrage
+    if CHANNEL_ID and CHANNEL_ID != 0:
+        print("📊 Création des fiches initiales...")
+        await asyncio.sleep(2)  # Attendre un peu que les données soient prêtes
+        await update_cards()  # Forcer une mise à jour immédiate
+        print("✅ Fiches initiales créées")
 
 @tasks.loop(seconds=30)
 async def update_cards():
@@ -201,6 +216,12 @@ async def before_update_cards():
 @bot.command(name='refresh')
 async def refresh_cards(ctx):
     """Force la mise à jour des fiches"""
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     await ctx.send("🔄 Mise à jour forcée...")
     
     load_data()
@@ -226,6 +247,12 @@ async def refresh_cards(ctx):
 @bot.command(name='reset')
 async def reset_cards(ctx):
     """Réinitialise toutes les fiches"""
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     global streamer_cards
     streamer_cards = {}
     save_cards()
@@ -239,6 +266,12 @@ async def status(ctx, streamer: str = None):
         !status              - Statut général du bot
         !status jltomy       - Statut du streamer JLTomy
     """
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     load_data()
     
     # Si un streamer est spécifié
@@ -289,6 +322,12 @@ async def status(ctx, streamer: str = None):
 @bot.command(name='help')
 async def help_command(ctx):
     """Affiche l'aide"""
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     embed = discord.Embed(
         title="📖 Commandes Disponibles",
         description="Commandes pour gérer le bot Twitch Miner",

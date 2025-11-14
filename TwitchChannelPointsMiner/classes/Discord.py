@@ -29,13 +29,13 @@ class Discord(object):
             embed = self._create_embed(message, event)
             if embed:
                 try:
-                    requests.post(
-                        url=self.webhook_api,
+            requests.post(
+                url=self.webhook_api,
                         json={
                             "embeds": [embed],
-                            "username": "Twitch Channel Points Miner",
-                            "avatar_url": "https://i.imgur.com/X9fEkhT.png",
-                        },
+                    "username": "Twitch Channel Points Miner",
+                    "avatar_url": "https://i.imgur.com/X9fEkhT.png",
+                },
                         timeout=5
                     )
                 except Exception:
@@ -168,9 +168,22 @@ class Discord(object):
             
             # Initialiser le streamer si nécessaire
             if streamer not in data['streamers']:
+                # Nouveau streamer - initialiser avec le solde actuel comme baseline
+                current_balance = 0
+                if points_match:
+                    points_value = float(points_match.group(1))
+                    points_unit = points_match.group(2).lower()
+                    if points_unit == 'k':
+                        points_value *= 1000
+                    elif points_unit == 'm':
+                        points_value *= 1000000
+                    current_balance = int(points_value)
+                
                 data['streamers'][streamer] = {
                     'online': False,
-                    'balance': 0,
+                    'balance': current_balance,
+                    'starting_balance': current_balance,  # Solde au démarrage
+                    'total_earned': 0,  # Points gagnés depuis le début
                     'session_points': 0,
                     'watch_points': 0,
                     'bonus_points': 0,
@@ -212,6 +225,7 @@ class Discord(object):
                 if gain_match:
                     points_gained = int(gain_match.group(1))
                     streamer_data['session_points'] = streamer_data.get('session_points', 0) + points_gained
+                    streamer_data['total_earned'] = streamer_data.get('total_earned', 0) + points_gained  # Total depuis le début
                     
                     reason_match = re.search(r'Reason: (\w+)', message)
                     if reason_match:
@@ -225,6 +239,7 @@ class Discord(object):
                     points_gained = int(gain_match.group(1))
                     streamer_data['session_points'] = streamer_data.get('session_points', 0) + points_gained
                     streamer_data['bonus_points'] = streamer_data.get('bonus_points', 0) + points_gained
+                    streamer_data['total_earned'] = streamer_data.get('total_earned', 0) + points_gained  # Total depuis le début
             
             elif event == Events.BET_START:
                 streamer_data['bets_placed'] = streamer_data.get('bets_placed', 0) + 1
