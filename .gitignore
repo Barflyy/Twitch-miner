@@ -141,8 +141,14 @@ cython_debug/
 .idea/
 
 # Custom files
-run.py
 chromedriver*
+
+# Bot Discord data (contient tokens et données)
+bot_data.json
+streamer_cards.json
+start_bot.sh
+start_miner.sh
+.env.discord
 
 # Folders
 cookies/*
