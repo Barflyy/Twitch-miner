@@ -13,19 +13,19 @@ if not username or not auth_token:
     print("❌ Configuration manquante : TWITCH_USERNAME et TWITCH_AUTH_TOKEN requis")
     sys.exit(1)
 
-# Charger la liste des streamers depuis le fichier (géré par !add/!remove)
-streamers_file = Path("streamers_list.json")
-if streamers_file.exists():
-    with open(streamers_file, 'r') as f:
-        streamers = json.load(f)
-    print(f"📺 Streamers depuis fichier: {', '.join(streamers) if streamers else 'Aucun'}")
+# Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
+# Blacklist optionnelle : streamers à exclure
+blacklist_file = Path("blacklist.json")
+if blacklist_file.exists():
+    with open(blacklist_file, 'r') as f:
+        blacklist = json.load(f)
+    print(f"🚫 Blacklist: {', '.join(blacklist) if blacklist else 'Aucune'}")
 else:
-    # Par défaut : JLTomy (comme avant)
-    streamers = ["jltomy"]
-    # Créer le fichier pour la première fois
-    with open(streamers_file, 'w') as f:
-        json.dump(streamers, f, indent=2)
-    print(f"📺 Streamers par défaut: {', '.join(streamers)}")
+    blacklist = []
+    # Créer le fichier blacklist vide
+    with open(blacklist_file, 'w') as f:
+        json.dump(blacklist, f, indent=2)
+    print(f"🚫 Blacklist: Aucune")
 
 print("🎮 Twitch Points Miner")
 print(f"👤 User: {username}")
@@ -115,20 +115,16 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-print("🚀 Démarrage du mining...")
+print("🚀 Démarrage du mining en mode FOLLOWERS...")
+print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
 
 try:
-    # Suivre les streamers depuis le fichier streamers_list.json
-    if not streamers:
-        print("⚠️  Aucun streamer à suivre ! Utilisez !add <streamer> sur Discord")
-        sys.exit(1)
-    
-    streamer_objects = [Streamer(s) for s in streamers]
-    print(f"🚀 Démarrage du mining pour {len(streamers)} streamer(s)...")
-    
+    # Mode FOLLOWERS : Suit automatiquement tous les streamers que vous suivez sur Twitch
+    # Les streamers dans blacklist.json seront exclus
     twitch_miner.mine(
-        streamer_objects,
-        followers=False
+        streamers=[],  # Liste vide car on utilise followers=True
+        blacklist=blacklist,  # Streamers à exclure
+        followers=True  # ✅ Active le mode auto-follow
     )
         
 except KeyboardInterrupt:

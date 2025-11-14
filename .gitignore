@@ -148,6 +148,7 @@ bot_data.json
 streamer_cards.json
 streamer_channels.json
 streamers_list.json
+blacklist.json
 start_bot.sh
 start_miner.sh
 .env.discord

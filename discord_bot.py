@@ -400,9 +400,9 @@ async def status(ctx, streamer: str = None):
         
         await ctx.send(embed=embed, delete_after=30)
 
-@bot.command(name='add')
-async def add_streamer(ctx, streamer: str):
-    """Ajoute un streamer à suivre"""
+@bot.command(name='blacklist')
+async def blacklist_streamer(ctx, streamer: str):
+    """Ajoute un streamer à la blacklist (ne sera pas miné)"""
     # Supprimer la commande
     try:
         await ctx.message.delete()
@@ -411,49 +411,31 @@ async def add_streamer(ctx, streamer: str):
     
     streamer_lower = streamer.lower()
     
-    # Charger la liste actuelle
-    streamers_file = Path("streamers_list.json")
-    if streamers_file.exists():
-        with open(streamers_file, 'r') as f:
-            streamers_list = json.load(f)
+    # Charger la blacklist actuelle
+    blacklist_file = Path("blacklist.json")
+    if blacklist_file.exists():
+        with open(blacklist_file, 'r') as f:
+            blacklist = json.load(f)
     else:
-        streamers_list = []
+        blacklist = []
     
     # Vérifier si déjà présent
-    if streamer_lower in streamers_list:
-        await ctx.send(f"⚠️  **{streamer}** est déjà dans la liste !", delete_after=5)
+    if streamer_lower in blacklist:
+        await ctx.send(f"⚠️  **{streamer}** est déjà dans la blacklist !", delete_after=5)
         return
     
     # Ajouter
-    streamers_list.append(streamer_lower)
+    blacklist.append(streamer_lower)
     
     # Sauvegarder
-    with open(streamers_file, 'w') as f:
-        json.dump(streamers_list, f, indent=2)
+    with open(blacklist_file, 'w') as f:
+        json.dump(blacklist, f, indent=2)
     
-    # Créer le salon immédiatement
-    load_data()
-    if streamer_lower not in streamer_data:
-        streamer_data[streamer_lower] = {
-            'online': False,
-            'balance': 0,
-            'starting_balance': 0,
-            'session_points': 0,
-            'watch_points': 0,
-            'bonus_points': 0,
-            'bets_placed': 0,
-            'bets_won': 0,
-            'bets_lost': 0
-        }
-    
-    # Forcer la mise à jour pour créer le salon
-    await update_channels()
-    
-    await ctx.send(f"✅ **{streamer}** ajouté ! Le miner le prendra en compte au prochain redémarrage.", delete_after=10)
+    await ctx.send(f"🚫 **{streamer}** ajouté à la blacklist ! Redémarrez le miner pour appliquer.", delete_after=10)
 
-@bot.command(name='remove')
-async def remove_streamer(ctx, streamer: str):
-    """Retire un streamer de la liste"""
+@bot.command(name='unblacklist')
+async def unblacklist_streamer(ctx, streamer: str):
+    """Retire un streamer de la blacklist (sera à nouveau miné)"""
     # Supprimer la commande
     try:
         await ctx.message.delete()
@@ -462,70 +444,65 @@ async def remove_streamer(ctx, streamer: str):
     
     streamer_lower = streamer.lower()
     
-    # Charger la liste actuelle
-    streamers_file = Path("streamers_list.json")
-    if streamers_file.exists():
-        with open(streamers_file, 'r') as f:
-            streamers_list = json.load(f)
+    # Charger la blacklist actuelle
+    blacklist_file = Path("blacklist.json")
+    if blacklist_file.exists():
+        with open(blacklist_file, 'r') as f:
+            blacklist = json.load(f)
     else:
-        streamers_list = []
+        blacklist = []
     
     # Vérifier si présent
-    if streamer_lower not in streamers_list:
-        await ctx.send(f"⚠️  **{streamer}** n'est pas dans la liste !", delete_after=5)
+    if streamer_lower not in blacklist:
+        await ctx.send(f"⚠️  **{streamer}** n'est pas dans la blacklist !", delete_after=5)
         return
     
     # Retirer
-    streamers_list.remove(streamer_lower)
+    blacklist.remove(streamer_lower)
     
     # Sauvegarder
-    with open(streamers_file, 'w') as f:
-        json.dump(streamers_list, f, indent=2)
+    with open(blacklist_file, 'w') as f:
+        json.dump(blacklist, f, indent=2)
     
-    # Supprimer le salon
-    if streamer_lower in streamer_channels and CATEGORY_ID != 0:
-        category = bot.get_channel(CATEGORY_ID)
-        if category:
-            guild = category.guild
-            channel_id = streamer_channels[streamer_lower]
-            channel = guild.get_channel(channel_id)
-            if channel:
-                await channel.delete()
-                print(f"🗑️  Salon supprimé: {streamer_lower}")
-            
-            del streamer_channels[streamer_lower]
-            if streamer_lower in streamer_messages:
-                del streamer_messages[streamer_lower]
-            save_channels()
-    
-    await ctx.send(f"✅ **{streamer}** retiré ! Redémarrez le miner pour appliquer.", delete_after=10)
+    await ctx.send(f"✅ **{streamer}** retiré de la blacklist ! Redémarrez le miner pour appliquer.", delete_after=10)
 
 @bot.command(name='list')
-async def list_streamers(ctx):
-    """Liste tous les streamers suivis"""
+async def list_blacklist(ctx):
+    """Affiche la blacklist (streamers exclus du mining)"""
     # Supprimer la commande
     try:
         await ctx.message.delete()
     except:
         pass
     
-    # Charger la liste
-    streamers_file = Path("streamers_list.json")
-    if streamers_file.exists():
-        with open(streamers_file, 'r') as f:
-            streamers_list = json.load(f)
+    # Charger la blacklist
+    blacklist_file = Path("blacklist.json")
+    if blacklist_file.exists():
+        with open(blacklist_file, 'r') as f:
+            blacklist = json.load(f)
     else:
-        streamers_list = []
-    
-    if not streamers_list:
-        await ctx.send("📋 Aucun streamer dans la liste.", delete_after=5)
-        return
+        blacklist = []
     
     embed = discord.Embed(
-        title="📋 Streamers Suivis",
-        description="\n".join(f"• {s}" for s in streamers_list),
-        color=0x9B59B6
+        title="🚫 Blacklist",
+        description="Streamers exclus du mining automatique",
+        color=0xFF0000
     )
+    
+    if blacklist:
+        embed.add_field(
+            name=f"📋 {len(blacklist)} streamer(s) blacklisté(s)",
+            value="\n".join(f"• {s}" for s in blacklist),
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="✅ Aucune blacklist",
+            value="Tous vos follows Twitch sont minés !",
+            inline=False
+        )
+    
+    embed.set_footer(text="Mode FOLLOWERS : Tous vos follows Twitch sont automatiquement minés (sauf blacklist)")
     
     await ctx.send(embed=embed, delete_after=30)
 
@@ -557,20 +534,26 @@ async def help_command(ctx):
     )
     
     embed.add_field(
-        name="!add <streamer>",
-        value="Ajoute un streamer à suivre\nEx: `!add xqc`",
+        name="🚫 Mode FOLLOWERS",
+        value="Le bot mine automatiquement TOUS vos follows Twitch",
         inline=False
     )
     
     embed.add_field(
-        name="!remove <streamer>",
-        value="Retire un streamer\nEx: `!remove xqc`",
+        name="!blacklist <streamer>",
+        value="Exclut un streamer du mining\nEx: `!blacklist xqc`",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!unblacklist <streamer>",
+        value="Réactive un streamer blacklisté\nEx: `!unblacklist xqc`",
         inline=False
     )
     
     embed.add_field(
         name="!list",
-        value="Liste tous les streamers suivis",
+        value="Affiche les streamers blacklistés",
         inline=False
     )
     
