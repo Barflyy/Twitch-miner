@@ -158,8 +158,10 @@ async def on_ready():
     # Vérifier qu'on a une catégorie définie
     if not CATEGORY_ID or CATEGORY_ID == 0:
         print("[BOT] ⚠️ DISCORD_CATEGORY_ID non défini !")
-        print("[BOT] Créez une catégorie Discord et ajoutez son ID dans les variables d'environnement")
-        print("[BOT] Le bot fonctionnera en mode fiches dans DISCORD_CHANNEL_ID")
+        print("[BOT] Le bot fonctionne sans salons automatiques")
+        print("[BOT] Ajoutez DISCORD_CATEGORY_ID pour activer le système de salons streamers")
+        print("[BOT] Pour l'instant, utilisez les commandes !status, !add, !list, etc.")
+        # Ne pas bloquer le démarrage, le bot reste fonctionnel pour les commandes
         return
     
     # Charger les données
@@ -302,6 +304,8 @@ async def refresh_channels(ctx):
 @bot.command(name='reset')
 async def reset_channels(ctx):
     """Supprime tous les salons streamers et réinitialise"""
+    global streamer_channels, streamer_messages
+    
     # Supprimer la commande de l'utilisateur
     try:
         await ctx.message.delete()
@@ -325,7 +329,6 @@ async def reset_channels(ctx):
                 await channel.delete()
                 print(f"🗑️  Salon supprimé: {streamer}")
         
-        global streamer_channels, streamer_messages
         streamer_channels = {}
         streamer_messages = {}
         save_channels()
