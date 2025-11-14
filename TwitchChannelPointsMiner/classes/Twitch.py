@@ -13,7 +13,7 @@ import string
 import time
 import requests
 import validators
-# import json
+import json
 
 from pathlib import Path
 from secrets import choice, token_hex
@@ -94,6 +94,23 @@ class Twitch(object):
         )
 
     def login(self):
+        # Si un token OAuth est fourni directement (password est un token OAuth)
+        # Un token OAuth Twitch fait généralement 30-40 caractères
+        if self.twitch_login.password and len(self.twitch_login.password) >= 30:
+            # Utiliser directement le token OAuth fourni
+            logger.info("Using provided OAuth token for authentication")
+            # Réinitialiser le résultat de vérification pour forcer une nouvelle vérification
+            self.twitch_login.login_check_result = False
+            self.twitch_login.set_token(self.twitch_login.password)
+            # Vérifier que le token est valide
+            if self.twitch_login.check_login():
+                # Sauvegarder le token dans les cookies pour les prochaines fois
+                self.twitch_login.save_cookies(self.cookies_file)
+                return
+            else:
+                logger.warning("Provided OAuth token is invalid, falling back to login flow")
+        
+        # Méthode normale : utiliser les cookies ou login flow
         if not os.path.isfile(self.cookies_file):
             if self.twitch_login.login_flow():
                 self.twitch_login.save_cookies(self.cookies_file)
@@ -219,6 +236,41 @@ class Twitch(object):
     def get_followers(
         self, limit: int = 100, order: FollowersOrder = FollowersOrder.ASC
     ):
+        # 🚀 CACHE SYSTÈME : Évite de recharger 465+ followers à chaque redémarrage
+        cache_file = Path("followers_cache.json")
+        cache_max_age = 6 * 3600  # 6 heures (modifiable : 1h = 3600, 12h = 43200, 24h = 86400)
+        
+        # Vérifier si le cache existe et est récent
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                
+                cache_time = cache_data.get('timestamp', 0)
+                cache_age = time.time() - cache_time
+                
+                if cache_age < cache_max_age:
+                    follows = cache_data.get('followers', [])
+                    hours_old = cache_age / 3600
+                    logger.info(
+                        f"⚡ Cache utilisé : {len(follows)} followers (dernière mise à jour il y a {hours_old:.1f}h)",
+                        extra={"emoji": ":zap:"}
+                    )
+                    return follows
+                else:
+                    logger.info(
+                        f"🔄 Cache expiré ({cache_age / 3600:.1f}h), rechargement...",
+                        extra={"emoji": ":arrows_counterclockwise:"}
+                    )
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur lecture cache : {e}")
+        
+        # Charger depuis Twitch API (lent, ~6min pour 465 followers)
+        logger.info(
+            "📥 Chargement des followers depuis Twitch (peut prendre plusieurs minutes)...",
+            extra={"emoji": ":inbox_tray:"}
+        )
+        
         json_data = copy.deepcopy(GQLOperations.ChannelFollows)
         json_data["variables"] = {"limit": limit, "order": str(order)}
         has_next = True
@@ -237,6 +289,23 @@ class Twitch(object):
                 has_next = follows_response["pageInfo"]["hasNextPage"]
             except KeyError:
                 return []
+        
+        # Sauvegarder le cache pour les prochains redémarrages
+        try:
+            cache_data = {
+                'timestamp': time.time(),
+                'followers': follows,
+                'count': len(follows)
+            }
+            with open(cache_file, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+            logger.info(
+                f"💾 Cache sauvegardé : {len(follows)} followers (valide 6h)",
+                extra={"emoji": ":floppy_disk:"}
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur sauvegarde cache : {e}")
+        
         return follows
 
     def update_raid(self, streamer, raid):

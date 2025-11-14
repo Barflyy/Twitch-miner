@@ -1410,6 +1410,92 @@ async def list_blacklist(ctx):
     
     await ctx.send(embed=embed, delete_after=30)
 
+@bot.command(name='addfollow')
+async def add_follow_command(ctx, streamer: str):
+    """Ajoute manuellement un nouveau follow sans redémarrer (optimisation)"""
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    streamer = streamer.lower().strip()
+    
+    # Vérifier si déjà dans la liste
+    if streamer in streamer_data:
+        await ctx.send(f"⚠️ **{streamer}** est déjà dans la liste !", delete_after=5)
+        return
+    
+    # Ajouter aux données (sera chargé au prochain cycle)
+    streamer_data[streamer] = {
+        'online': False,
+        'balance': 0,
+        'session_points': 0,
+        'watch_points': 0,
+        'bonus_points': 0,
+        'bets_placed': 0,
+        'bets_won': 0,
+        'bets_lost': 0
+    }
+    save_data()  # Sauvegarder
+    
+    # Ajouter au cache des followers pour le prochain redémarrage
+    try:
+        from pathlib import Path
+        import json
+        import time
+        
+        cache_file = Path("followers_cache.json")
+        if cache_file.exists():
+            with open(cache_file, 'r') as f:
+                cache_data = json.load(f)
+            
+            if streamer not in cache_data.get('followers', []):
+                cache_data['followers'].append(streamer)
+                cache_data['count'] = len(cache_data['followers'])
+                # NE PAS mettre à jour le timestamp pour garder l'âge du cache
+                
+                with open(cache_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                
+                print(f"✅ {streamer} ajouté au cache des followers")
+    except Exception as e:
+        print(f"⚠️ Erreur ajout au cache : {e}")
+    
+    await ctx.send(
+        f"✅ **{streamer}** ajouté ! Il apparaîtra dans Discord s'il passe en ligne.\n"
+        f"💡 Il sera miné automatiquement au prochain redémarrage (déjà en cache).",
+        delete_after=15
+    )
+
+@bot.command(name='refreshcache')
+async def refresh_cache_command(ctx):
+    """Force le rechargement du cache des followers au prochain redémarrage"""
+    # Supprimer la commande de l'utilisateur
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    try:
+        from pathlib import Path
+        cache_file = Path("followers_cache.json")
+        
+        if cache_file.exists():
+            cache_file.unlink()
+            await ctx.send(
+                "✅ **Cache supprimé !**\n"
+                "Au prochain redémarrage, le bot rechargera tous vos follows Twitch.\n"
+                "⚠️ Cela prendra ~6 minutes avec 465 followers.",
+                delete_after=20
+            )
+            print("🗑️ Cache des followers supprimé (sera rechargé au prochain démarrage)")
+        else:
+            await ctx.send("⚠️ Aucun cache trouvé.", delete_after=5)
+    except Exception as e:
+        await ctx.send(f"❌ Erreur : {e}", delete_after=10)
+        print(f"❌ Erreur suppression cache : {e}")
+
 @bot.command(name='help')
 async def help_command(ctx):
     """Affiche l'aide"""
@@ -1462,8 +1548,20 @@ async def help_command(ctx):
     )
     
     embed.add_field(
+        name="!addfollow <streamer>",
+        value="⚡ Ajoute un nouveau follow SANS redémarrer\nEx: `!addfollow shroud`",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="!refreshcache",
+        value="Force le rechargement des follows au prochain redémarrage",
+        inline=False
+    )
+    
+    embed.add_field(
         name="!refresh",
-        value="Force la mise à jour des salons",
+        value="Force la mise à jour des salons Discord",
         inline=False
     )
     
@@ -1479,7 +1577,7 @@ async def help_command(ctx):
         inline=False
     )
     
-    embed.set_footer(text="💡 Salons auto-update 30s • 🟢 = Online • 🔴 = Offline")
+    embed.set_footer(text="⚡ Cache des followers : redémarrage INSTANTANÉ (pas de rechargement 6min) • Salons auto-update 30s")
     
     await ctx.send(embed=embed, delete_after=60)
 
