@@ -581,12 +581,7 @@ async def on_ready():
         update_channels.start()
     
     print("🔄 Mise à jour automatique activée (30 secondes)")
-    
-    # Créer/mettre à jour les salons immédiatement
-    print("📊 Création/mise à jour des salons streamers...")
-    await asyncio.sleep(2)  # Attendre un peu que les données soient prêtes
-    await update_channels()
-    print("✅ Salons streamers créés/mis à jour")
+    print("⏳ Attente du premier cycle pour éviter le rate limit...")
 
 def count_channels_in_category(category):
     """Compte le nombre de canaux textuels dans une catégorie"""
