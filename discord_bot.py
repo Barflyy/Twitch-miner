@@ -442,7 +442,7 @@ async def update_stats_channels(guild):
         # Compter les streams en ligne
         online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
         
-        # Nettoyage : Supprimer TOUS les salons obsolètes (followers, streams hors ligne, etc.)
+        # Nettoyage : Supprimer SEULEMENT les salons obsolètes (followers, anciens formats)
         for ch in stats_category.channels:
             if isinstance(ch, discord.TextChannel):
                 should_delete = False
@@ -450,12 +450,11 @@ async def update_stats_channels(guild):
                 # Supprimer si c'est un salon de followers (👥 ou "followers")
                 if "👥" in ch.name or "followers" in ch.name.lower():
                     should_delete = True
-                # Supprimer si c'est un ancien salon sans │
-                elif "streams-" in ch.name and "│" not in ch.name:
+                # Supprimer si c'est un ancien salon sans │ (mais PAS le salon statistiques-globales)
+                elif "streams-" in ch.name and "│" not in ch.name and ch.name != "📊-statistiques-globales":
                     should_delete = True
-                # Supprimer l'ancien salon statistiques-globales
-                elif ch.name == "📊-statistiques-globales":
-                    should_delete = True
+                
+                # ✅ On GARDE le salon 📊-statistiques-globales (bonnes infos)
                 
                 if should_delete:
                     try:

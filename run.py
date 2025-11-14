@@ -115,21 +115,19 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Mode TEST : Un seul streamer pour les tests
-test_streamers = [
-    "Viper"
-]
-
-print("🚀 Démarrage du mining en mode TEST (1 streamer)...")
-print(f"📋 Le bot va suivre : {test_streamers[0]}")
+# Mode FOLLOWERS : Mining automatique de tous vos follows Twitch
+print("🚀 Démarrage du mining en mode FOLLOWERS...")
+print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
+if blacklist:
+    print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
 
 try:
-    # Mode TEST : Un seul streamer pour les tests
+    # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
     # Les streamers dans blacklist.json seront exclus
     twitch_miner.mine(
-        streamers=test_streamers,  # Viper uniquement
+        streamers=[],  # Liste vide = utilise followers
         blacklist=blacklist,  # Streamers à exclure
-        followers=False  # Mode test : pas de followers automatiques
+        followers=True  # Active le mode followers automatique
     )
         
 except KeyboardInterrupt:
