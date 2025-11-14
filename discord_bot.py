@@ -32,7 +32,7 @@ category_channels = {}  # {category_id: [channel_ids]} - Suivi des canaux par ca
 category_cache = {}  # Cache des catégories {category_index: category}
 MAX_CHANNELS_PER_CATEGORY = 50  # Limite Discord
 last_data_load = 0  # Timestamp du dernier chargement
-DATA_CACHE_TTL = 5  # Cache les données pendant 5 secondes
+DATA_CACHE_TTL = 2  # Cache les données pendant 2 secondes (réduit pour détecter plus vite les changements offline)
 STATS_CATEGORY_ID = 1438730807866032129  # ID de la catégorie pour les stats
 stats_channel_id = None  # ID du salon de stats
 stats_message_id = None  # ID du message de stats
@@ -785,8 +785,8 @@ async def update_channels():
         
         guild = base_category.guild
         
-        # Recharger les données (avec cache - pas de force pour utiliser le cache)
-        load_data()
+        # Recharger les données (force le rechargement pour détecter les changements offline)
+        load_data(force=True)
         
         # Construire l'index des canaux au premier passage (une seule fois)
         if not channels_index_loaded:
@@ -807,16 +807,72 @@ async def update_channels():
         print(f"📊 Traitement de {len(online_streams)} streams en ligne (sur {len(sorted_streamers)} total)")
         
         # NETTOYAGE : Supprimer TOUS les salons hors ligne
+        # Vérifier d'abord dans streamer_data, puis aussi directement dans les salons Discord
         if len(streamer_data) > 0:
-            offline_channels_to_delete = [s for s in streamer_channels.keys() if s not in online_streamer_names]
+            # Liste des streamers à supprimer : ceux qui sont dans streamer_channels mais pas en ligne
+            offline_channels_to_delete = []
+            
+            for streamer_in_channel in list(streamer_channels.keys()):
+                should_delete = False
+                
+                # Cas 1: Le streamer n'est plus dans streamer_data
+                if streamer_in_channel not in streamer_data:
+                    should_delete = True
+                # Cas 2: Le streamer est dans streamer_data mais offline
+                elif streamer_in_channel not in online_streamer_names:
+                    # Vérifier explicitement le statut online
+                    streamer_status = streamer_data.get(streamer_in_channel, {}).get('online', False)
+                    if not streamer_status:
+                        should_delete = True
+                
+                if should_delete:
+                    offline_channels_to_delete.append(streamer_in_channel)
+            
+            # Vérifier aussi les salons Discord qui existent mais ne sont pas dans streamer_channels
+            # (cas où un salon existe mais n'est pas dans notre mapping)
+            for category in guild.categories:
+                if category.name.startswith(base_category.name) or category == base_category:
+                    for channel in category.text_channels:
+                        if isinstance(channel, discord.TextChannel):
+                            # Vérifier si c'est un salon de streamer (format: 🟢-nom ou 🔴-nom)
+                            if channel.name.startswith("🟢-") or channel.name.startswith("🔴-"):
+                                streamer_from_channel = channel.name.split("-", 1)[1] if "-" in channel.name else None
+                                if streamer_from_channel:
+                                    streamer_from_channel_lower = streamer_from_channel.lower()
+                                    # Si le salon existe mais le streamer n'est pas en ligne
+                                    if streamer_from_channel_lower not in online_streamer_names:
+                                        # Vérifier le statut dans les données
+                                        streamer_status = streamer_data.get(streamer_from_channel_lower, {}).get('online', False)
+                                        if not streamer_status:
+                                            # Le salon existe mais le streamer est offline
+                                            if streamer_from_channel_lower not in offline_channels_to_delete:
+                                                # Ajouter à la liste si pas déjà dedans
+                                                offline_channels_to_delete.append(streamer_from_channel_lower)
+                                                # Ajouter au mapping si pas présent
+                                                if streamer_from_channel_lower not in streamer_channels:
+                                                    streamer_channels[streamer_from_channel_lower] = channel.id
             
             if offline_channels_to_delete:
                 print(f"🗑️  [NETTOYAGE] {len(offline_channels_to_delete)} salon(s) hors ligne à supprimer")
                 deleted_count = 0
                 
                 for streamer_to_delete in offline_channels_to_delete:
-                    channel_id = streamer_channels[streamer_to_delete]
-                    channel = guild.get_channel(channel_id)
+                    channel_id = streamer_channels.get(streamer_to_delete)
+                    if not channel_id:
+                        # Si pas dans le mapping, chercher le salon directement
+                        for category in guild.categories:
+                            if category.name.startswith(base_category.name) or category == base_category:
+                                for channel in category.text_channels:
+                                    if isinstance(channel, discord.TextChannel):
+                                        if channel.name.startswith("🟢-") or channel.name.startswith("🔴-"):
+                                            streamer_from_channel = channel.name.split("-", 1)[1] if "-" in channel.name else None
+                                            if streamer_from_channel and streamer_from_channel.lower() == streamer_to_delete.lower():
+                                                channel_id = channel.id
+                                                break
+                                if channel_id:
+                                    break
+                    
+                    channel = guild.get_channel(channel_id) if channel_id else None
                     
                     if channel:
                         try:
@@ -830,7 +886,8 @@ async def update_channels():
                             print(f"⚠️  Erreur suppression {streamer_to_delete}: {e}")
                     
                     # Nettoyer les références
-                    del streamer_channels[streamer_to_delete]
+                    if streamer_to_delete in streamer_channels:
+                        del streamer_channels[streamer_to_delete]
                     if streamer_to_delete in streamer_messages:
                         del streamer_messages[streamer_to_delete]
                     if streamer_to_delete in streamer_data_cache:
@@ -1080,39 +1137,7 @@ async def update_channels():
                                 import traceback
                                 traceback.print_exc()
         
-        # Supprimer les salons des streamers qui sont hors ligne OU qui ne sont plus dans la liste
-        online_streamer_names = {s for s, d in sorted_streamers if d.get('online', False)}
-        
-        for streamer in list(streamer_channels.keys()):
-            # Supprimer si : hors ligne OU plus dans la liste
-            should_delete = False
-            if streamer not in streamer_data:
-                # Plus dans la liste du tout
-                should_delete = True
-            elif streamer not in online_streamer_names:
-                # Toujours dans la liste mais hors ligne
-                should_delete = True
-            
-            if should_delete:
-                channel_id = streamer_channels[streamer]
-                channel = guild.get_channel(channel_id)
-                if channel:
-                    try:
-                        await channel.delete()
-                        print(f"🗑️  Salon supprimé (hors ligne): {streamer}")
-                    except Exception as e:
-                        print(f"⚠️  Erreur suppression salon {streamer}: {e}")
-                
-                del streamer_channels[streamer]
-                if streamer in streamer_messages:
-                    del streamer_messages[streamer]
-                if streamer in streamer_data_cache:
-                    del streamer_data_cache[streamer]
-                # Retirer de l'index aussi
-                streamer_name_lower = streamer.lower()
-                if streamer_name_lower in channels_index:
-                    del channels_index[streamer_name_lower]
-                channels_modified = True
+        # Le nettoyage a déjà été fait plus haut, pas besoin de le refaire ici
         
         # Sauvegarder seulement si des modifications ont été faites
         if channels_modified:
