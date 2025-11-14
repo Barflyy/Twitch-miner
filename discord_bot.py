@@ -41,10 +41,8 @@ channels_index = {}  # Index des canaux {streamer_name: channel} pour recherche 
 channels_index_loaded = False  # Flag pour savoir si l'index est chargé
 # Salons de statistiques détaillées
 online_count_channel_id = None  # ID du salon "streams en ligne"
-offline_count_channel_id = None  # ID du salon "streams hors ligne"
 followers_count_channel_id = None  # ID du salon "followers Barflyy_"
 online_count_message_id = None  # ID du message dans le salon "streams en ligne"
-offline_count_message_id = None  # ID du message dans le salon "streams hors ligne"
 followers_count_message_id = None  # ID du message dans le salon "followers Barflyy_"
 TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
 
@@ -81,10 +79,8 @@ def save_channels():
             'stats_channel_id': stats_channel_id,
             'stats_message_id': stats_message_id,
             'online_count_channel_id': online_count_channel_id,
-            'offline_count_channel_id': offline_count_channel_id,
             'followers_count_channel_id': followers_count_channel_id,
             'online_count_message_id': online_count_message_id,
-            'offline_count_message_id': offline_count_message_id,
             'followers_count_message_id': followers_count_message_id
         }
         with open('streamer_channels.json', 'w') as f:
@@ -95,8 +91,8 @@ def save_channels():
 def load_channels():
     """Charge les IDs des salons streamers"""
     global streamer_channels, streamer_messages, category_channels, stats_channel_id, stats_message_id
-    global online_count_channel_id, offline_count_channel_id, followers_count_channel_id
-    global online_count_message_id, offline_count_message_id, followers_count_message_id
+    global online_count_channel_id, followers_count_channel_id
+    global online_count_message_id, followers_count_message_id
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
@@ -107,10 +103,8 @@ def load_channels():
                 stats_channel_id = data.get('stats_channel_id')
                 stats_message_id = data.get('stats_message_id')
                 online_count_channel_id = data.get('online_count_channel_id')
-                offline_count_channel_id = data.get('offline_count_channel_id')
                 followers_count_channel_id = data.get('followers_count_channel_id')
                 online_count_message_id = data.get('online_count_message_id')
-                offline_count_message_id = data.get('offline_count_message_id')
                 followers_count_message_id = data.get('followers_count_message_id')
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
@@ -120,10 +114,8 @@ def load_channels():
         stats_channel_id = None
         stats_message_id = None
         online_count_channel_id = None
-        offline_count_channel_id = None
         followers_count_channel_id = None
         online_count_message_id = None
-        offline_count_message_id = None
         followers_count_message_id = None
 
 def create_streamer_embed(streamer: str) -> discord.Embed:
@@ -426,9 +418,9 @@ async def get_twitch_followers_count(username: str) -> int:
         return 0
 
 async def update_stats_channels(guild):
-    """Crée ou met à jour les 3 salons de statistiques détaillées"""
-    global online_count_channel_id, offline_count_channel_id, followers_count_channel_id
-    global online_count_message_id, offline_count_message_id, followers_count_message_id
+    """Crée ou met à jour les 2 salons de statistiques détaillées (streams en ligne et followers)"""
+    global online_count_channel_id, followers_count_channel_id
+    global online_count_message_id, followers_count_message_id
     
     try:
         stats_category = guild.get_channel(STATS_CATEGORY_ID)
@@ -439,13 +431,21 @@ async def update_stats_channels(guild):
         # Recharger les données pour avoir les stats à jour
         load_data()
         
-        # Compter les streams en ligne/hors ligne
-        total_streamers = len(streamer_data)
+        # Compter les streams en ligne
         online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
-        offline_streamers = total_streamers - online_streamers
         
         # Obtenir le nombre de followers
         followers_count = await get_twitch_followers_count(TWITCH_USERNAME_TO_TRACK)
+        
+        # Supprimer le salon "streams hors ligne" s'il existe encore (nettoyage)
+        channel_name_offline = "🔴-streams-hors-ligne"
+        for ch in stats_category.channels:
+            if isinstance(ch, discord.TextChannel) and ch.name == channel_name_offline:
+                try:
+                    await ch.delete()
+                    print(f"🗑️  Salon obsolète supprimé: {channel_name_offline}")
+                except Exception as e:
+                    print(f"⚠️  Erreur suppression salon obsolète: {e}")
         
         # Salon 1: Streams en ligne
         channel_name_online = "🟢-streams-en-ligne"
@@ -493,51 +493,7 @@ async def update_stats_channels(guild):
                     online_count_message_id = message.id
                     save_channels()
         
-        # Salon 2: Streams hors ligne
-        channel_name_offline = "🔴-streams-hors-ligne"
-        if not offline_count_channel_id:
-            existing_channel = None
-            for ch in stats_category.channels:
-                if isinstance(ch, discord.TextChannel) and ch.name == channel_name_offline:
-                    existing_channel = ch
-                    break
-            
-            if existing_channel:
-                offline_count_channel_id = existing_channel.id
-                print(f"🔍 Salon existant trouvé: {channel_name_offline}")
-            else:
-                channel = await guild.create_text_channel(
-                    name=channel_name_offline,
-                    category=stats_category,
-                    position=2
-                )
-                offline_count_channel_id = channel.id
-                print(f"✅ Salon créé: {channel_name_offline}")
-                save_channels()
-        else:
-            channel = guild.get_channel(offline_count_channel_id)
-            if not channel:
-                offline_count_channel_id = None
-                offline_count_message_id = None
-        
-        if offline_count_channel_id:
-            channel = guild.get_channel(offline_count_channel_id)
-            if channel:
-                message_text = f"# 🔴 **{offline_streamers}** streams hors ligne"
-                if offline_count_message_id:
-                    try:
-                        message = await channel.fetch_message(offline_count_message_id)
-                        await message.edit(content=message_text)
-                    except discord.NotFound:
-                        message = await channel.send(message_text)
-                        offline_count_message_id = message.id
-                        save_channels()
-                else:
-                    message = await channel.send(message_text)
-                    offline_count_message_id = message.id
-                    save_channels()
-        
-        # Salon 3: Followers Barflyy_
+        # Salon 2: Followers Barflyy_
         channel_name_followers = f"👥-followers-{TWITCH_USERNAME_TO_TRACK.lower()}"
         if not followers_count_channel_id:
             existing_channel = None
@@ -553,7 +509,7 @@ async def update_stats_channels(guild):
                 channel = await guild.create_text_channel(
                     name=channel_name_followers,
                     category=stats_category,
-                    position=3
+                    position=2
                 )
                 followers_count_channel_id = channel.id
                 print(f"✅ Salon créé: {channel_name_followers}")
@@ -808,33 +764,18 @@ async def update_channels():
         channels_modified = False  # Flag pour batch save
         updates_count = 0
         
-        # Optimisation : filtrer les streams à traiter
-        # Premier passage : traiter tous les streams (pour créer les salons manquants)
-        # Passages suivants : seulement ceux qui ont changé ou sont en ligne
-        if not channels_index_loaded:
-            # Premier passage : traiter tous les streams
-            print(f"📊 Traitement initial de {len(sorted_streamers)} streams")
-            streams_to_process = sorted_streamers
-        else:
-            # Passages suivants : seulement ceux qui ont changé ou sont en ligne
-            filtered_streams = []
-            for streamer, data in sorted_streamers:
-                is_online = data.get('online', False)
-                # Traiter si : en ligne OU changement de statut OU nouveau streamer
-                if is_online or has_data_changed(streamer, data) or streamer not in streamer_channels:
-                    filtered_streams.append((streamer, data))
-            streams_to_process = filtered_streams
-            print(f"📊 Traitement de {len(streams_to_process)}/{len(sorted_streamers)} streams (optimisé)")
+        # Filtrer pour ne garder QUE les streamers en ligne
+        online_streams = [(s, d) for s, d in sorted_streamers if d.get('online', False)]
+        print(f"📊 Traitement de {len(online_streams)} streams en ligne (sur {len(sorted_streamers)} total)")
         
-        # Mettre à jour ou créer les canaux
-        for index, (streamer, data) in enumerate(streams_to_process):
+        # Mettre à jour ou créer les canaux SEULEMENT pour les streamers en ligne
+        for index, (streamer, data) in enumerate(online_streams):
             # Rate limiting : 1s toutes les 10 requêtes (optimisé)
             if index > 0 and index % 10 == 0:
                 await asyncio.sleep(1)
             
-            is_online = data.get('online', False)
-            status_emoji = "🟢" if is_online else "🔴"
-            channel_name = f"{status_emoji}-{streamer.lower()}"
+            # Tous les streamers ici sont en ligne (filtrés plus haut)
+            channel_name = f"🟢-{streamer.lower()}"
             
             # Déterminer la catégorie appropriée (vérifie automatiquement si elle a de la place)
             target_category = await find_available_category(guild, base_category, index)
@@ -856,7 +797,7 @@ async def update_channels():
                         except Exception as e:
                             print(f"⚠️  Erreur déplacement canal {channel_name}: {e}")
                     
-                    # Mettre à jour le nom si le statut a changé
+                    # Mettre à jour le nom si nécessaire (doit être 🟢-nom)
                     if channel.name != channel_name:
                         await channel.edit(name=channel_name)
                         print(f"🔄 Salon renommé: {channel_name}")
@@ -1031,20 +972,38 @@ async def update_channels():
                                 import traceback
                                 traceback.print_exc()
         
-        # Supprimer les salons des streamers qui ne sont plus dans la liste
+        # Supprimer les salons des streamers qui sont hors ligne OU qui ne sont plus dans la liste
+        online_streamer_names = {s for s, d in sorted_streamers if d.get('online', False)}
+        
         for streamer in list(streamer_channels.keys()):
+            # Supprimer si : hors ligne OU plus dans la liste
+            should_delete = False
             if streamer not in streamer_data:
+                # Plus dans la liste du tout
+                should_delete = True
+            elif streamer not in online_streamer_names:
+                # Toujours dans la liste mais hors ligne
+                should_delete = True
+            
+            if should_delete:
                 channel_id = streamer_channels[streamer]
                 channel = guild.get_channel(channel_id)
                 if channel:
-                    await channel.delete()
-                    print(f"🗑️  Salon supprimé: {streamer}")
+                    try:
+                        await channel.delete()
+                        print(f"🗑️  Salon supprimé (hors ligne): {streamer}")
+                    except Exception as e:
+                        print(f"⚠️  Erreur suppression salon {streamer}: {e}")
                 
                 del streamer_channels[streamer]
                 if streamer in streamer_messages:
                     del streamer_messages[streamer]
                 if streamer in streamer_data_cache:
                     del streamer_data_cache[streamer]
+                # Retirer de l'index aussi
+                streamer_name_lower = streamer.lower()
+                if streamer_name_lower in channels_index:
+                    del channels_index[streamer_name_lower]
                 channels_modified = True
         
         # Sauvegarder seulement si des modifications ont été faites
