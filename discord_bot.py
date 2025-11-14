@@ -144,11 +144,15 @@ def create_streamer_embed(streamer: str) -> discord.Embed:
     # Couleur selon statut
     color = 0x00FF00 if is_online else 0x808080
     
+    # URL du stream si en ligne
+    stream_url = f"https://twitch.tv/{streamer}" if is_online else None
+    
     embed = discord.Embed(
         title=f"{status_emoji} {streamer.upper()}",
         description=f"**Statut:** {status_text}",
         color=color,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
+        url=stream_url
     )
     
     # Solde
@@ -373,16 +377,19 @@ async def update_stats_channel(guild):
             try:
                 message = await channel.fetch_message(stats_message_id)
                 await message.edit(embed=embed)
+                # Log silencieux : pas de spam
             except discord.NotFound:
                 # Message supprimé, en créer un nouveau
                 message = await channel.send(embed=embed)
                 stats_message_id = message.id
                 save_channels()
+                print(f"✅ Message stats globales recréé")
         else:
             # Créer le message initial
             message = await channel.send(embed=embed)
             stats_message_id = message.id
             save_channels()
+            print(f"✅ Message stats globales créé")
             
     except Exception as e:
         print(f"❌ Erreur update_stats_channel: {e}")
@@ -476,11 +483,10 @@ async def update_stats_channels(guild):
             
             if existing_channel:
                 online_count_channel_id = existing_channel.id
-                print(f"🔍 Salon existant trouvé: {existing_channel.name}")
                 # Mettre à jour le nom avec la nouvelle valeur
                 if existing_channel.name != channel_name_online:
                     await existing_channel.edit(name=channel_name_online)
-                    print(f"🔄 Salon renommé: {channel_name_online}")
+                    print(f"🔄 Compteur mis à jour: {channel_name_online}")
             else:
                 channel = await guild.create_text_channel(
                     name=channel_name_online,
@@ -498,7 +504,7 @@ async def update_stats_channels(guild):
                 # Mettre à jour le nom du salon avec la nouvelle valeur
                 if channel.name != channel_name_online:
                     await channel.edit(name=channel_name_online)
-                    print(f"🔄 Stats mise à jour: {channel_name_online}")
+                    print(f"🔄 Compteur mis à jour: {channel_name_online}")
                     
     except Exception as e:
         print(f"❌ Erreur update_stats_channels: {e}")
@@ -1038,15 +1044,77 @@ async def update_channels():
         if channels_modified:
                 save_channels()
         
+        # RÉORGANISATION : Trier les salons par ordre alphabétique dans chaque catégorie
+        # Utilise l'API bulk edit pour minimiser les appels
+        if channels_modified and len(online_streams) > 0:
+            try:
+                reordered_count = 0
+                # Pour chaque catégorie de streams
+                for cat in guild.categories:
+                    if cat.name.startswith(base_category.name) or cat == base_category:
+                        # Récupérer tous les salons textuels de cette catégorie
+                        text_channels = [ch for ch in cat.channels if isinstance(ch, discord.TextChannel)]
+                        
+                        if len(text_channels) <= 1:
+                            continue  # Pas besoin de trier 0 ou 1 salon
+                        
+                        # Trier par nom (alphabétique, ignore les emojis)
+                        sorted_channels = sorted(text_channels, key=lambda ch: ch.name.lower())
+                        
+                        # Vérifier si l'ordre est déjà correct
+                        needs_reorder = False
+                        for i, channel in enumerate(sorted_channels):
+                            if channel.position != i:
+                                needs_reorder = True
+                                break
+                        
+                        if needs_reorder:
+                            # Bulk edit pour minimiser les API calls
+                            updates = []
+                            for position, channel in enumerate(sorted_channels):
+                                updates.append({'id': channel.id, 'position': position})
+                            
+                            # Discord permet de modifier plusieurs salons à la fois
+                            try:
+                                await cat.edit(channels=[(ch, pos) for pos, ch in enumerate(sorted_channels)])
+                                reordered_count += len(sorted_channels)
+                                await asyncio.sleep(1)  # Rate limiting entre catégories
+                            except Exception as e:
+                                # Si bulk edit échoue, ne rien faire (pas critique)
+                                pass
+                
+                if reordered_count > 0:
+                    print(f"📋 {reordered_count} salons réorganisés par ordre alphabétique")
+            except Exception as e:
+                print(f"⚠️  Erreur réorganisation: {e}")
+        
+        # NETTOYAGE : Supprimer les catégories vides (sauf la catégorie de base)
+        # Exemple : Si on passe de 60 streams (2 catégories) à 30 streams (1 catégorie)
+        for cat in guild.categories:
+            # Vérifier que c'est une catégorie de streams (commence par le nom de base)
+            if cat.name.startswith(base_category.name) and cat != base_category:
+                # Compter les salons dans cette catégorie
+                channel_count = count_channels_in_category(cat)
+                if channel_count == 0:
+                    try:
+                        await cat.delete()
+                        print(f"🗑️  [NETTOYAGE] Catégorie vide supprimée: {cat.name}")
+                        # Retirer du cache
+                        for idx, cached_cat in list(category_cache.items()):
+                            if cached_cat == cat:
+                                del category_cache[idx]
+                    except Exception as e:
+                        print(f"⚠️  Erreur suppression catégorie vide {cat.name}: {e}")
+        
         # Mettre à jour le salon de statistiques
         await update_stats_channel(guild)
         
         # Mettre à jour les salons de statistiques détaillées
         await update_stats_channels(guild)
         
-        # Log périodique
-        if updates_count > 0:
-            print(f"📊 {updates_count} messages mis à jour sur {len(sorted_streamers)} streamers")
+        # Log du cycle complet (toutes les 30s) - plus informatif
+        total_streamers = len(sorted_streamers)
+        print(f"✅ Cycle: {len(online_streams)}/{total_streamers} en ligne | {updates_count} fiches mises à jour")
     
     except Exception as e:
         print(f"❌ Erreur update_channels: {e}")
