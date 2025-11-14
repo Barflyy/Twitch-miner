@@ -67,9 +67,16 @@ class Twitch(object):
     ]
 
     def __init__(self, username, user_agent, password=None):
-        cookies_path = os.path.join(Path().absolute(), "cookies")
-        Path(cookies_path).mkdir(parents=True, exist_ok=True)
-        self.cookies_file = os.path.join(cookies_path, f"{username}.pkl")
+        # Sur Railway, sauvegarder dans le dossier du projet (persiste entre déploiements)
+        # Sinon utiliser ./cookies comme avant
+        if os.getenv("RAILWAY_ENVIRONMENT"):
+            # Railway : sauvegarder dans le répertoire du projet
+            self.cookies_file = os.path.join(Path().absolute(), f".{username}_cookies.pkl")
+        else:
+            # Local : utiliser le dossier cookies
+            cookies_path = os.path.join(Path().absolute(), "cookies")
+            Path(cookies_path).mkdir(parents=True, exist_ok=True)
+            self.cookies_file = os.path.join(cookies_path, f"{username}.pkl")
         self.user_agent = user_agent
         self.device_id = "".join(
             choice(string.ascii_letters + string.digits) for _ in range(32)

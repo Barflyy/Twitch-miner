@@ -151,6 +151,9 @@ start_bot.sh
 start_miner.sh
 .env.discord
 
+# Cookies Twitch (persistants sur Railway)
+.*_cookies.pkl
+
 # Folders
 cookies/*
 logs/*
