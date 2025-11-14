@@ -422,9 +422,9 @@ async def get_twitch_followers_count(username: str) -> int:
         return 0
 
 async def update_stats_channels(guild):
-    """Crée ou met à jour les 2 salons de statistiques détaillées (streams en ligne et followers)"""
-    global online_count_channel_id, followers_count_channel_id
-    global online_count_message_id, followers_count_message_id
+    """Crée ou met à jour le salon de statistiques (streams en ligne seulement)"""
+    global online_count_channel_id
+    global online_count_message_id
     
     try:
         stats_category = guild.get_channel(STATS_CATEGORY_ID)
@@ -442,18 +442,23 @@ async def update_stats_channels(guild):
         # Compter les streams en ligne
         online_streamers = sum(1 for s in streamer_data.values() if s.get('online', False))
         
-        # Obtenir le nombre de followers
-        followers_count = await get_twitch_followers_count(TWITCH_USERNAME_TO_TRACK)
-        
-        # Supprimer le salon "streams hors ligne" s'il existe encore (nettoyage)
-        channel_name_offline = "🔴-streams-hors-ligne"
+        # Nettoyage : Supprimer les anciens salons obsolètes
+        obsolete_names = ["🔴-streams-hors-ligne", "👥-followers-", "🟢-streams-en-ligne"]
         for ch in stats_category.channels:
-            if isinstance(ch, discord.TextChannel) and ch.name == channel_name_offline:
-                try:
-                    await ch.delete()
-                    print(f"🗑️  Salon obsolète supprimé: {channel_name_offline}")
-                except Exception as e:
-                    print(f"⚠️  Erreur suppression salon obsolète: {e}")
+            if isinstance(ch, discord.TextChannel):
+                # Supprimer si le nom correspond à un ancien format
+                should_delete = False
+                for obsolete in obsolete_names:
+                    if obsolete in ch.name and "│" not in ch.name:  # Ancien format sans │
+                        should_delete = True
+                        break
+                
+                if should_delete:
+                    try:
+                        await ch.delete()
+                        print(f"🗑️  Salon obsolète supprimé: {ch.name}")
+                    except Exception as e:
+                        print(f"⚠️  Erreur suppression salon obsolète: {e}")
         
         # Salon 1: Streams en ligne - LE NOM DU SALON CONTIENT LA STAT
         channel_name_online = f"🟢│{online_streamers}-streams-en-ligne"
@@ -491,44 +496,6 @@ async def update_stats_channels(guild):
                 if channel.name != channel_name_online:
                     await channel.edit(name=channel_name_online)
                     print(f"🔄 Stats mise à jour: {channel_name_online}")
-        
-        # Salon 2: Followers - LE NOM DU SALON CONTIENT LA STAT
-        followers_display = f"{followers_count:,}".replace(',', ' ') if followers_count > 0 else "0"
-        channel_name_followers = f"👥│{followers_display}-followers-{TWITCH_USERNAME_TO_TRACK.lower()}"
-        
-        if not followers_count_channel_id:
-            # Chercher si un salon avec un nom similaire existe déjà
-            existing_channel = None
-            for ch in stats_category.channels:
-                if isinstance(ch, discord.TextChannel) and f"-followers-{TWITCH_USERNAME_TO_TRACK.lower()}" in ch.name:
-                    existing_channel = ch
-                    break
-            
-            if existing_channel:
-                followers_count_channel_id = existing_channel.id
-                print(f"🔍 Salon existant trouvé: {existing_channel.name}")
-                # Mettre à jour le nom avec la nouvelle valeur
-                if existing_channel.name != channel_name_followers:
-                    await existing_channel.edit(name=channel_name_followers)
-                    print(f"🔄 Salon renommé: {channel_name_followers}")
-            else:
-                channel = await guild.create_text_channel(
-                    name=channel_name_followers,
-                    category=stats_category,
-                    position=2
-                )
-                followers_count_channel_id = channel.id
-                print(f"✅ Salon créé: {channel_name_followers}")
-                save_channels()
-        else:
-            channel = guild.get_channel(followers_count_channel_id)
-            if not channel:
-                followers_count_channel_id = None
-            else:
-                # Mettre à jour le nom du salon avec la nouvelle valeur
-                if channel.name != channel_name_followers:
-                    await channel.edit(name=channel_name_followers)
-                    print(f"🔄 Stats mise à jour: {channel_name_followers}")
                     
     except Exception as e:
         print(f"❌ Erreur update_stats_channels: {e}")
@@ -833,12 +800,25 @@ async def update_channels():
                                 await message.edit(embed=embed)
                                 updates_count += 1
                             except discord.NotFound:
-                                # Message supprimé, en créer un nouveau
+                                # Message supprimé, nettoyer le salon et créer une nouvelle fiche
+                                # Supprimer tous les anciens messages
+                                try:
+                                    async for old_message in channel.history(limit=100):
+                                        await old_message.delete()
+                                except:
+                                    pass
+                                # Créer la nouvelle fiche
                                 message = await channel.send(embed=embed)
                                 streamer_messages[streamer] = message.id
                                 channels_modified = True
                         else:
-                            # Créer le message initial
+                            # Nettoyer le salon avant de créer la fiche (supprimer les anciennes fiches)
+                            try:
+                                async for old_message in channel.history(limit=100):
+                                    await old_message.delete()
+                            except:
+                                pass
+                            # Créer la fiche initiale
                             message = await channel.send(embed=embed)
                             streamer_messages[streamer] = message.id
                             channels_modified = True
@@ -928,10 +908,22 @@ async def update_channels():
                                 await message.edit(embed=embed)
                                 updates_count += 1
                             except discord.NotFound:
+                                # Message supprimé, nettoyer et créer une nouvelle fiche
+                                try:
+                                    async for old_message in channel.history(limit=100):
+                                        await old_message.delete()
+                                except:
+                                    pass
                                 message = await channel.send(embed=embed)
                                 streamer_messages[streamer] = message.id
                                 channels_modified = True
                         else:
+                            # Nettoyer le salon avant de créer la fiche
+                            try:
+                                async for old_message in channel.history(limit=100):
+                                    await old_message.delete()
+                            except:
+                                pass
                             message = await channel.send(embed=embed)
                             streamer_messages[streamer] = message.id
                             channels_modified = True
@@ -955,6 +947,12 @@ async def update_channels():
                         # Ajouter à l'index
                         channels_index[streamer_name_lower] = channel
                         
+                        # Nettoyer le salon (si jamais il y a des messages)
+                        try:
+                            async for old_message in channel.history(limit=100):
+                                await old_message.delete()
+                        except:
+                            pass
                         # Créer le message initial
                         embed = create_streamer_embed(streamer)
                         message = await channel.send(embed=embed)
