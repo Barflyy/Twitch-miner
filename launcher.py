@@ -12,28 +12,77 @@ from threading import Thread
 def run_discord_bot():
     """Lance le bot Discord"""
     print("🤖 Démarrage du Bot Discord...")
+    print("📍 Vérification du token...")
+    
+    token = os.getenv("DISCORD_BOT_TOKEN")
+    if not token:
+        print("❌ DISCORD_BOT_TOKEN manquant !")
+        return
+    
+    print(f"✅ Token présent (longueur: {len(token)})")
+    
     try:
-        subprocess.run([sys.executable, "discord_bot.py"], check=True)
+        import sys
+        import subprocess
+        
+        # Lancer avec sortie en temps réel
+        process = subprocess.Popen(
+            [sys.executable, "-u", "discord_bot.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Afficher les logs en temps réel
+        for line in process.stdout:
+            print(f"[BOT] {line.rstrip()}")
+        
+        process.wait()
+        
     except KeyboardInterrupt:
         print("🛑 Bot Discord arrêté")
     except Exception as e:
         print(f"❌ Erreur Bot Discord: {e}")
+        import traceback
+        traceback.print_exc()
 
 def run_miner():
     """Lance le miner Twitch"""
     print("⛏️  Démarrage du Miner...")
-    time.sleep(3)  # Attendre que le bot Discord soit prêt
+    time.sleep(5)  # Attendre que le bot Discord soit connecté
+    
     try:
-        subprocess.run([sys.executable, "run.py"], check=True)
+        # Lancer avec sortie en temps réel
+        process = subprocess.Popen(
+            [sys.executable, "-u", "run.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Afficher les logs en temps réel
+        for line in process.stdout:
+            print(f"[MINER] {line.rstrip()}")
+        
+        process.wait()
+        
     except KeyboardInterrupt:
         print("🛑 Miner arrêté")
     except Exception as e:
         print(f"❌ Erreur Miner: {e}")
+        import traceback
+        traceback.print_exc()
 
 def main():
-    print("=" * 50)
-    print("🚀 LAUNCHER - Twitch Miner + Bot Discord")
-    print("=" * 50)
+    # Forcer unbuffered pour Railway
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+    
+    print("=" * 50, flush=True)
+    print("🚀 LAUNCHER - Twitch Miner + Bot Discord", flush=True)
+    print("=" * 50, flush=True)
     
     # Vérifier les variables d'environnement
     required_vars = {
@@ -49,36 +98,36 @@ def main():
             missing.append(f"  ❌ {var} ({desc})")
     
     if missing:
-        print("\n⚠️  Variables d'environnement manquantes:")
+        print("\n⚠️  Variables d'environnement manquantes:", flush=True)
         for m in missing:
-            print(m)
-        print("\nConfigurez-les dans Railway Settings → Variables")
+            print(m, flush=True)
+        print("\nConfigurez-les dans Railway Settings → Variables", flush=True)
         sys.exit(1)
     
-    print("\n✅ Toutes les variables sont configurées")
-    print(f"✅ Bot Discord: Canal {os.getenv('DISCORD_CHANNEL_ID')}")
-    print(f"✅ Twitch: {os.getenv('TWITCH_USERNAME')}")
-    print(f"✅ Mode Bot Discord: {os.getenv('USE_DISCORD_BOT', 'true')}")
-    print()
+    print("\n✅ Toutes les variables sont configurées", flush=True)
+    print(f"✅ Bot Discord: Canal {os.getenv('DISCORD_CHANNEL_ID')}", flush=True)
+    print(f"✅ Twitch: {os.getenv('TWITCH_USERNAME')}", flush=True)
+    print(f"✅ Mode Bot Discord: {os.getenv('USE_DISCORD_BOT', 'true')}", flush=True)
+    print(flush=True)
     
     # Lancer les deux processus en parallèle
-    discord_thread = Thread(target=run_discord_bot, daemon=True)
-    miner_thread = Thread(target=run_miner, daemon=True)
+    discord_thread = Thread(target=run_discord_bot, daemon=True, name="Discord-Bot")
+    miner_thread = Thread(target=run_miner, daemon=True, name="Twitch-Miner")
     
     discord_thread.start()
     miner_thread.start()
     
-    print("🔄 Les deux bots sont lancés en parallèle")
-    print("📊 Surveillez les logs ci-dessous...")
-    print("=" * 50)
-    print()
+    print("🔄 Les deux bots sont lancés en parallèle", flush=True)
+    print("📊 Surveillez les logs ci-dessous...", flush=True)
+    print("=" * 50, flush=True)
+    print(flush=True)
     
     # Attendre que les threads se terminent
     try:
         discord_thread.join()
         miner_thread.join()
     except KeyboardInterrupt:
-        print("\n🛑 Arrêt demandé...")
+        print("\n🛑 Arrêt demandé...", flush=True)
         sys.exit(0)
 
 if __name__ == "__main__":
