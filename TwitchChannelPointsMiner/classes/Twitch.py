@@ -99,16 +99,32 @@ class Twitch(object):
         if self.twitch_login.password and len(self.twitch_login.password) >= 30:
             # Utiliser directement le token OAuth fourni
             logger.info("Using provided OAuth token for authentication")
+            logger.info(f"Token length: {len(self.twitch_login.password)} characters")
+            
+            # Nettoyer le token (enlever oauth: si présent, espaces, etc.)
+            token = self.twitch_login.password.strip()
+            if token.startswith("oauth:"):
+                token = token[6:]  # Enlever le préfixe "oauth:"
+                logger.info("Removed 'oauth:' prefix from token")
+            
             # Réinitialiser le résultat de vérification pour forcer une nouvelle vérification
             self.twitch_login.login_check_result = False
-            self.twitch_login.set_token(self.twitch_login.password)
+            self.twitch_login.set_token(token)
+            
             # Vérifier que le token est valide
+            logger.info("Validating OAuth token...")
             if self.twitch_login.check_login():
+                logger.info(f"✅ OAuth token valid! User ID: {self.twitch_login.user_id}")
                 # Sauvegarder le token dans les cookies pour les prochaines fois
                 self.twitch_login.save_cookies(self.cookies_file)
                 return
             else:
-                logger.warning("Provided OAuth token is invalid, falling back to login flow")
+                logger.error("❌ Provided OAuth token is INVALID!")
+                logger.error("Please verify your TWITCH_AUTH_TOKEN:")
+                logger.error("1. Go to https://twitchtokengenerator.com/")
+                logger.error("2. Generate 'Custom Scope Token' with: user:read:follows, channel:read:redemptions")
+                logger.error("3. Update TWITCH_AUTH_TOKEN in Railway")
+                logger.warning("Falling back to login flow (will fail without valid credentials)")
         
         # Méthode normale : utiliser les cookies ou login flow
         if not os.path.isfile(self.cookies_file):
@@ -279,6 +295,10 @@ class Twitch(object):
         while has_next is True:
             json_data["variables"]["cursor"] = last_cursor
             json_response = self.post_gql_request(json_data)
+            
+            # Debug: afficher la réponse
+            logger.debug(f"GQL Response: {json_response}")
+            
             try:
                 follows_response = json_response["data"]["user"]["follows"]
                 last_cursor = None
@@ -287,7 +307,13 @@ class Twitch(object):
                     last_cursor = f["cursor"]
 
                 has_next = follows_response["pageInfo"]["hasNextPage"]
-            except KeyError:
+            except KeyError as e:
+                logger.error(f"❌ Erreur récupération followers: {e}")
+                logger.error(f"❌ Réponse API: {json_response}")
+                # Vérifier si c'est une erreur d'authentification
+                if "errors" in json_response:
+                    for error in json_response["errors"]:
+                        logger.error(f"❌ Twitch API Error: {error.get('message', 'Unknown error')}")
                 return []
         
         # Sauvegarder le cache pour les prochains redémarrages
