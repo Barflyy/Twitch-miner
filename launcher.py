@@ -11,15 +11,16 @@ from threading import Thread
 
 def run_discord_bot():
     """Lance le bot Discord"""
-    print("🤖 Démarrage du Bot Discord...")
-    print("📍 Vérification du token...")
+    print("🤖 Démarrage du Bot Discord...", flush=True)
+    print("📍 Vérification du token...", flush=True)
     
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
-        print("❌ DISCORD_BOT_TOKEN manquant !")
+        print("❌ DISCORD_BOT_TOKEN manquant !", flush=True)
+        print("⚠️ Le bot Discord ne démarrera pas, mais le miner continuera", flush=True)
         return
     
-    print(f"✅ Token présent (longueur: {len(token)})")
+    print(f"✅ Token présent (longueur: {len(token)})", flush=True)
     
     try:
         import sys
@@ -47,15 +48,15 @@ def run_discord_bot():
             print(f"[BOT] Processus terminé avec code {process.returncode}", flush=True)
         
     except KeyboardInterrupt:
-        print("🛑 Bot Discord arrêté")
+        print("🛑 Bot Discord arrêté", flush=True)
     except Exception as e:
-        print(f"❌ Erreur Bot Discord: {e}")
+        print(f"❌ Erreur Bot Discord: {e}", flush=True)
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stdout)
 
 def run_miner():
     """Lance le miner Twitch"""
-    print("⛏️  Démarrage du Miner...")
+    print("⛏️  Démarrage du Miner...", flush=True)
     time.sleep(5)  # Attendre que le bot Discord soit connecté
     
     try:
@@ -81,11 +82,11 @@ def run_miner():
             print(f"[MINER] Processus terminé avec code {process.returncode}", flush=True)
         
     except KeyboardInterrupt:
-        print("🛑 Miner arrêté")
+        print("🛑 Miner arrêté", flush=True)
     except Exception as e:
-        print(f"❌ Erreur Miner: {e}")
+        print(f"❌ Erreur Miner: {e}", flush=True)
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stdout)
 
 def main():
     # Forcer unbuffered pour Railway/Fly.io
@@ -94,12 +95,17 @@ def main():
         sys.stderr.reconfigure(line_buffering=True)
     except (AttributeError, OSError):
         # Fallback pour Python < 3.7 ou environnements sans reconfigure
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
+        try:
+            import io
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
+        except Exception:
+            pass  # Si ça échoue, on continue quand même
     
     print("=" * 50, flush=True)
     print("🚀 LAUNCHER - Twitch Miner + Bot Discord", flush=True)
+    print(f"🐍 Python: {sys.version}", flush=True)
+    print(f"📁 Working directory: {os.getcwd()}", flush=True)
     print("=" * 50, flush=True)
     
     # Vérifier les variables d'environnement
@@ -152,5 +158,11 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"❌ ERREUR FATALE dans launcher.py: {e}", flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
 
