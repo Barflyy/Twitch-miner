@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 import json
+import time
+import threading
 from pathlib import Path
 
 # Configuration
@@ -46,24 +48,32 @@ else:
                 except Exception as e:
                     print(f"⚠️ Erreur suppression: {e}")
 
-# Mode LISTE MANUELLE : Utilise le fichier JSON avec les streamers
-# OU Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
-streamers_list_file = Path("streamers_list.json")
-streamers_manual = []
+# Mode FICHIER JSON : Utilise directement barflyy__followers.json comme liste de streamers
+# Le fichier est mis à jour en arrière-plan via l'API Helix pour détecter les nouveaux follows
+followers_json_file = Path(f"followers_data/{username}_followers.json")
+streamers_from_json = []
 
-if streamers_list_file.exists():
-    with open(streamers_list_file, 'r') as f:
-        streamers_manual = json.load(f)
-    if isinstance(streamers_manual, list) and len(streamers_manual) > 0:
-        print(f"📋 Liste manuelle chargée : {len(streamers_manual)} streamer(s)")
-        print(f"📋 Streamers : {', '.join(streamers_manual[:10])}{'...' if len(streamers_manual) > 10 else ''}")
-        USE_FOLLOWERS = False
-    else:
-        print("⚠️ Fichier streamers_list.json vide ou invalide")
+# Charger le fichier JSON pour miner (source principale)
+if followers_json_file.exists():
+    try:
+        with open(followers_json_file, 'r') as f:
+            data = json.load(f)
+        
+        if 'followers' in data and isinstance(data['followers'], list) and len(data['followers']) > 0:
+            streamers_from_json = data['followers']
+            print(f"📂 Fichier JSON chargé : {len(streamers_from_json)} streamer(s)")
+            print(f"📂 Source : {followers_json_file}")
+            print(f"📂 Dernière mise à jour : {data.get('last_update', 'Inconnue')}")
+            USE_FOLLOWERS = False
+        else:
+            print("⚠️ Fichier JSON invalide ou vide")
+            USE_FOLLOWERS = True
+    except Exception as e:
+        print(f"⚠️ Erreur lecture fichier JSON : {e}")
         USE_FOLLOWERS = True
 else:
-    print("📋 Aucun fichier streamers_list.json trouvé")
-    print("💡 Créez streamers_list.json avec vos streamers OU utilisez le mode FOLLOWERS")
+    print(f"⚠️ Fichier JSON introuvable : {followers_json_file}")
+    print("💡 Le fichier sera créé automatiquement via l'API Helix")
     USE_FOLLOWERS = True
 
 # Blacklist optionnelle : streamers à exclure
@@ -168,21 +178,23 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Mode LISTE MANUELLE ou FOLLOWERS
+# Mode FICHIER JSON ou FOLLOWERS
 if USE_FOLLOWERS:
     print("🚀 Démarrage du mining en mode FOLLOWERS...")
-    print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
+    print("📋 Le bot va charger les follows via l'API Helix (première fois)")
     if blacklist:
         print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
 else:
-    print("🚀 Démarrage du mining en mode LISTE MANUELLE...")
-    print(f"📋 Le bot va miner {len(streamers_manual)} streamer(s) de votre liste")
+    print("🚀 Démarrage du mining en mode FICHIER JSON...")
+    print(f"📋 Le bot va miner {len(streamers_from_json)} streamer(s) depuis le fichier JSON")
+    print(f"📂 Fichier utilisé : followers_data/{username}_followers.json")
+    print("🔄 Mise à jour du fichier en arrière-plan via l'API Helix (détection nouveaux follows)...")
     if blacklist:
         print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
 
 try:
     if USE_FOLLOWERS:
-        # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
+        # Mode FOLLOWERS : Utilise l'API Helix pour charger (première fois seulement)
         # Les streamers dans blacklist.json seront exclus
         twitch_miner.mine(
             streamers=[],  # Liste vide = utilise followers
@@ -190,16 +202,47 @@ try:
             followers=True  # Active le mode followers automatique
         )
     else:
-        # Mode LISTE MANUELLE : Utilise uniquement les streamers du fichier JSON
+        # Mode FICHIER JSON : Utilise directement le fichier JSON pour miner
+        # L'API Helix met à jour le fichier en arrière-plan pour détecter les nouveaux follows
         # Filtrer la blacklist
-        streamers_filtered = [s for s in streamers_manual if s.lower() not in [b.lower() for b in blacklist]]
-        if len(streamers_filtered) != len(streamers_manual):
-            print(f"🚫 {len(streamers_manual) - len(streamers_filtered)} streamer(s) blacklisté(s)")
+        streamers_filtered = [s for s in streamers_from_json if s.lower() not in [b.lower() for b in blacklist]]
+        if len(streamers_filtered) != len(streamers_from_json):
+            print(f"🚫 {len(streamers_from_json) - len(streamers_filtered)} streamer(s) blacklisté(s)")
         
+        # Lancer la mise à jour du fichier en arrière-plan (thread séparé)
+        import threading
+        def update_followers_file():
+            """Met à jour le fichier JSON via l'API Helix en arrière-plan"""
+            try:
+                time.sleep(5)  # Attendre que le miner démarre
+                print("🔄 Mise à jour du fichier JSON via l'API Helix...")
+                # Utiliser l'API Helix pour récupérer les followers
+                helix_followers = twitch_miner.twitch._get_followers_via_helix_api()
+                if helix_followers and len(helix_followers) > 0:
+                    # Sauvegarder dans le fichier JSON
+                    import sys
+                    sys.path.append(str(Path(__file__).parent))
+                    from github_cache import get_github_cache
+                    github_cache = get_github_cache(username)
+                    success = github_cache.save_followers(helix_followers)
+                    if success:
+                        print(f"✅ Fichier JSON mis à jour : {len(helix_followers)} followers (dont {len(helix_followers) - len(streamers_from_json)} nouveaux)")
+                    else:
+                        print("⚠️ Échec sauvegarde fichier JSON")
+                else:
+                    print("⚠️ API Helix n'a pas retourné de followers")
+            except Exception as e:
+                print(f"⚠️ Erreur mise à jour fichier JSON : {e}")
+        
+        # Lancer la mise à jour en arrière-plan
+        update_thread = threading.Thread(target=update_followers_file, daemon=True)
+        update_thread.start()
+        
+        # Miner avec le fichier JSON (sans attendre la mise à jour)
         twitch_miner.mine(
-            streamers=streamers_filtered,  # Liste manuelle de streamers
+            streamers=streamers_filtered,  # Liste depuis le fichier JSON
             blacklist=blacklist,  # Streamers à exclure
-            followers=False  # Désactive le mode followers automatique
+            followers=False  # Désactive le mode followers automatique (on utilise le fichier directement)
         )
         
 except KeyboardInterrupt:
