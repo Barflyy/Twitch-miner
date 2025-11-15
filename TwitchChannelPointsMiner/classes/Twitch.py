@@ -250,7 +250,7 @@ class Twitch(object):
             return json_response["data"]["user"]["id"]
 
     def get_followers(
-        self, limit: int = 100, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
+        self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
         # 🚀 CACHE SYSTÈME OPTIMISÉ : Évite de recharger 465+ followers à chaque redémarrage
         # Persistance garantie entre redéploiements Railway et redémarrages locaux
@@ -273,9 +273,14 @@ class Twitch(object):
                 
                 # Vérifications de validité du cache
                 cache_username = cache_data.get('username', '')
+                cache_count = cache_data.get('count', 0)
+                
                 if cache_username != self.twitch_login.username:
                     logger.warning(f"⚠️ Cache invalide : appartient à {cache_username}, pas à {self.twitch_login.username}")
                     cache_file.unlink()  # Supprimer le cache invalide
+                elif cache_count < 200:  # Si le cache a moins de 200 followers, il est incomplet
+                    logger.warning(f"⚠️ Cache incomplet ({cache_count} followers), rechargement complet...")
+                    cache_file.unlink()  # Supprimer le cache incomplet
                 else:
                     cache_time = cache_data.get('timestamp', 0)
                     cache_age = time.time() - cache_time
@@ -385,7 +390,7 @@ class Twitch(object):
             temp_cache_file.replace(cache_file)
             
             logger.info(
-                f"💾 Cache sauvegardé : {len(follows)} followers (valide 12h) → {cache_file}",
+                f"💾 Cache sauvegardé : {len(follows)} followers (valide 24h) → {cache_file}",
                 extra={"emoji": ":floppy_disk:"}
             )
         except Exception as e:
