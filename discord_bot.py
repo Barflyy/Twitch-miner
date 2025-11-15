@@ -970,11 +970,11 @@ async def create_or_update_pinned_list(guild):
         if pinned_list_message_id:
             try:
                 message = await list_channel.fetch_message(pinned_list_message_id)
-                await message.edit(content=content)
+                await message.edit(embed=embed)
                 print(f"✅ Message épinglé mis à jour : {online_count} en ligne, {offline_count} hors ligne")
             except discord.NotFound:
                 # Message supprimé, en créer un nouveau
-                message = await list_channel.send(content)
+                message = await list_channel.send(embed=embed)
                 await message.pin()
                 pinned_list_message_id = message.id
                 pinned_list_channel_id = list_channel.id
@@ -982,7 +982,7 @@ async def create_or_update_pinned_list(guild):
                 print(f"✅ Nouveau message épinglé créé : {online_count} en ligne, {offline_count} hors ligne")
         else:
             # Créer le message et l'épingler
-            message = await list_channel.send(content)
+            message = await list_channel.send(embed=embed)
             await message.pin()
             pinned_list_message_id = message.id
             pinned_list_channel_id = list_channel.id
