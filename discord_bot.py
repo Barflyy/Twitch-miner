@@ -47,13 +47,9 @@ followers_count_message_id = None  # ID du message dans le salon "followers Barf
 TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
 
 def get_cache_file_path():
-    """Retourne le chemin du fichier de cache (persiste sur Fly.io)"""
-    if os.getenv("FLY_APP_NAME"):
-        # Fly.io : sauvegarder dans le répertoire du projet (persiste entre déploiements)
-        return Path("followers_cache.json")
-    else:
-        # Local : sauvegarder dans le dossier du projet
-        return Path("followers_cache.json")
+    """Retourne le chemin du fichier de cache (persiste sur Fly.io et local)"""
+    # Sur Fly.io et local, sauvegarder dans le répertoire du projet
+    return Path("followers_cache.json")
 
 def load_data(force=False):
     """Charge les données depuis le fichier JSON avec cache"""
