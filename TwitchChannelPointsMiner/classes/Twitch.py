@@ -800,22 +800,49 @@ class Twitch(object):
             return False"""
 
     def update_client_version(self):
+        """
+        Met à jour la version du client Twitch en récupérant le build ID depuis twitch.tv.
+        Gère les erreurs de connexion de manière gracieuse.
+        """
         try:
-            response = requests.get(URL)
+            # Ajouter un timeout pour éviter les attentes infinies
+            response = requests.get(
+                URL,
+                timeout=5,  # 5 secondes max
+                headers={"User-Agent": self.user_agent}
+            )
             if response.status_code != 200:
                 logger.debug(
-                    f"Error with update_client_version: {response.status_code}"
+                    f"Error with update_client_version: HTTP {response.status_code}"
                 )
                 return self.client_version
+            
             matcher = re.search(self.twilight_build_id_pattern, response.text)
             if not matcher:
-                logger.debug("Error with update_client_version: no match")
+                logger.debug("Error with update_client_version: no match found in response")
                 return self.client_version
+            
             self.client_version = matcher.group(1)
-            logger.debug(f"Client version: {self.client_version}")
+            logger.debug(f"Client version updated: {self.client_version}")
             return self.client_version
+            
+        except requests.exceptions.Timeout:
+            # Timeout - connexion trop lente
+            logger.debug("update_client_version: Timeout (connexion trop lente), utilisation version existante")
+            return self.client_version
+            
+        except requests.exceptions.ConnectionError as e:
+            # Erreurs de connexion (IncompleteRead, Connection broken, etc.)
+            logger.debug(f"update_client_version: Erreur de connexion ({type(e).__name__}), utilisation version existante")
+            return self.client_version
+            
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error with update_client_version: {e}")
+            # Autres erreurs requests
+            logger.debug(f"update_client_version: Erreur requête ({type(e).__name__}), utilisation version existante")
+            return self.client_version
+        except Exception as e:
+            # Erreurs inattendues
+            logger.debug(f"update_client_version: Erreur inattendue ({type(e).__name__}: {e}), utilisation version existante")
             return self.client_version
 
     def send_minute_watched_events(self, streamers, priority, chunk_size=3):
