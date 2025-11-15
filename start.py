@@ -7,9 +7,20 @@ Vérifie les imports et lance launcher.py
 import sys
 import os
 
-# Forcer unbuffered
-sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
-sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
+# Forcer unbuffered - essayer plusieurs méthodes
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except (AttributeError, OSError):
+    try:
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
+    except Exception:
+        pass  # Si tout échoue, on continue quand même
+
+# Forcer flush immédiat
+print("", flush=True, end="")
 
 print("=" * 50, flush=True)
 print("🚀 START.PY - Script de démarrage", flush=True)
