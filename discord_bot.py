@@ -1015,89 +1015,100 @@ async def create_or_update_pinned_list(guild):
         online_count = sum(1 for _, d in sorted_streamers if d.get('online', False))
         offline_count = len(sorted_streamers) - online_count
         
-        # Calculer les statistiques globales
-        total_streamers = len(sorted_streamers)
-        
-        # Calculer le temps d'activité du bot
-        uptime_text = "N/A"
-        if bot_start_time:
-            uptime = datetime.utcnow() - bot_start_time
-            days = int(uptime.total_seconds() // 86400)
-            hours = int((uptime.total_seconds() % 86400) // 3600)
-            minutes = int((uptime.total_seconds() % 3600) // 60)
-            
-            if days > 0:
-                uptime_text = f"{days}j {hours}h {minutes}m"
-            elif hours > 0:
-                uptime_text = f"{hours}h {minutes}m"
-            else:
-                uptime_text = f"{minutes}m"
-        
-        # Calculer les totaux de points
+        # Calculer les totaux de points pour le résumé
         total_balance = sum(s.get('balance', 0) for s in streamer_data.values())
         total_session_points = sum(s.get('session_points', 0) for s in streamer_data.values())
+        total_watch_points = sum(s.get('watch_points', 0) for s in streamer_data.values())
+        total_bonus_points = sum(s.get('bonus_points', 0) for s in streamer_data.values())
+        total_bets_won = sum(s.get('bets_won', 0) for s in streamer_data.values())
+        total_bets_lost = sum(s.get('bets_lost', 0) for s in streamer_data.values())
         
-        # Nombre de salons Discord créés (ancien système)
-        total_channels = len(streamer_channels)
+        # Formatage des nombres
+        balance_display = f"{total_balance:,.0f}".replace(',', ' ')
+        session_display = f"{total_session_points:,.0f}".replace(',', ' ')
+        watch_display = f"{total_watch_points:,.0f}".replace(',', ' ')
+        bonus_display = f"{total_bonus_points:,.0f}".replace(',', ' ')
         
-        # Nombre de catégories
-        categories_count = 0
-        if CATEGORY_ID:
-            try:
-                category = bot.get_channel(CATEGORY_ID)
-                if category:
-                    categories_count = len([c for c in category.guild.categories if c.name.startswith(category.name)])
-            except:
-                pass
-        
-        # Créer le contenu du message avec embed Discord (plus joli et plus d'espace)
+        # Créer le contenu du message avec embed Discord
         embed = discord.Embed(
-            title="📊 Statistiques Globales - Twitch Miner",
-            description="Statistiques en temps réel du bot de mining",
+            title="📺 LISTE DES STREAMERS",
+            description=f"🟢 **{online_count}** en ligne | 🔴 **{offline_count}** hors ligne | 📋 **{len(sorted_streamers)}** total",
             color=0x5865F2,
             timestamp=datetime.utcnow()
         )
         
-        # 📊 STATISTIQUES GLOBALES
-        # Statut des streams
-        embed.add_field(
-            name="📺 Streams",
-            value=f"🟢 **{online_count}** en ligne\n🔴 **{offline_count}** hors ligne\n📋 **{total_streamers}** total",
-            inline=True
-        )
+        # 📊 RÉSUMÉ EN HAUT : Points de chaîne gagnés
+        summary_lines = []
+        summary_lines.append(f"💰 **Solde total** : {balance_display} pts")
+        if total_session_points > 0:
+            summary_lines.append(f"📈 **Session** : +{session_display} pts")
+        if total_watch_points > 0:
+            summary_lines.append(f"👀 **Watch** : +{watch_display} pts")
+        if total_bonus_points > 0:
+            summary_lines.append(f"🎁 **Bonus** : +{bonus_display} pts")
+        if total_bets_won > 0 or total_bets_lost > 0:
+            summary_lines.append(f"🎲 **Paris** : ✅ {total_bets_won} | ❌ {total_bets_lost}")
         
-        # Followers Totaux
-        embed.add_field(
-            name="👥 Followers Totaux",
-            value=f"📁 **{total_streamers}** streamers suivis\n💬 Salons Discord créés\n🔄 Mise à jour: 30s",
-            inline=True
-        )
-        
-        # Temps d'activité
-        embed.add_field(
-            name="⏱️ Temps d'activité",
-            value=f"🟢 **{uptime_text}**",
-            inline=True
-        )
-        
-        # Points totaux
-        balance_display = f"{total_balance:,.0f}".replace(',', ' ')
-        session_display = f"{total_session_points:,.0f}".replace(',', ' ')
-        embed.add_field(
-            name="💎 Points Totaux",
-            value=f"💰 Solde: **{balance_display}**\n📈 Session: **+{session_display}**",
-            inline=True
-        )
-        
-        # Catégories
-        if categories_count > 0:
+        if summary_lines:
             embed.add_field(
-                name="📁 Catégories",
-                value=f"📂 **{categories_count}** catégorie(s)\n📊 Max: 50 canaux/catégorie",
-                inline=True
+                name="💎 Points de Chaîne",
+                value="\n".join(summary_lines),
+                inline=False
             )
         
-        embed.set_footer(text="Twitch Channel Points Miner • Statistiques globales • Mise à jour auto toutes les 30s")
+        # Streamers en ligne (limiter à 25 pour éviter embed trop long)
+        online_list = []
+        for streamer, data in sorted_streamers:
+            if data.get('online', False):
+                balance = data.get('balance', 0)
+                balance_str = f"{balance:,.0f}".replace(',', ' ')
+                session_points = data.get('session_points', 0)
+                if session_points > 0:
+                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts (+{session_points})")
+                else:
+                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts")
+                if len(online_list) >= 25:
+                    online_list.append(f"... et {online_count - 25} autres")
+                    break
+        
+        if online_list:
+            embed.add_field(
+                name=f"🟢 STREAMERS EN LIGNE ({online_count})",
+                value="\n".join(online_list) if len("\n".join(online_list)) < 1024 else "\n".join(online_list[:20]) + f"\n... et {online_count - 20} autres",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🟢 STREAMERS EN LIGNE",
+                value="Aucun streamer en ligne actuellement",
+                inline=False
+            )
+        
+        # Streamers hors ligne (limiter à 25)
+        offline_list = []
+        for streamer, data in sorted_streamers:
+            if not data.get('online', False):
+                balance = data.get('balance', 0)
+                balance_str = f"{balance:,.0f}".replace(',', ' ')
+                offline_list.append(f"🔴 **{streamer}** - {balance_str} pts")
+                if len(offline_list) >= 25:
+                    offline_list.append(f"... et {offline_count - 25} autres")
+                    break
+        
+        if offline_list:
+            embed.add_field(
+                name=f"🔴 STREAMERS HORS LIGNE ({offline_count})",
+                value="\n".join(offline_list) if len("\n".join(offline_list)) < 1024 else "\n".join(offline_list[:20]) + f"\n... et {offline_count - 20} autres",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🔴 STREAMERS HORS LIGNE",
+                value="Aucun streamer hors ligne",
+                inline=False
+            )
+        
+        embed.set_footer(text="💡 Utilisez !status <streamer> pour les détails • Mise à jour auto toutes les 30s")
         
         # Créer ou mettre à jour le message
         if pinned_list_message_id:
