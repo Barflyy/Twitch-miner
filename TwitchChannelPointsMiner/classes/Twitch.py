@@ -548,8 +548,8 @@ class Twitch(object):
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
-        # 🚀 CACHE GITHUB UNIQUE : Source de vérité absolue
-        # Le fichier GitHub followers_data/username_followers.json contient TOUS les follows
+        # 📂 SOURCE UNIQUE : Le fichier GitHub followers_data/username_followers.json
+        # On utilise UNIQUEMENT ce fichier, plus d'API Helix ou GraphQL
 
         # Importer le cache GitHub
         import sys
@@ -558,8 +558,8 @@ class Twitch(object):
 
         github_cache = get_github_cache(self.twitch_login.username)
 
-        # Essayer de charger depuis le cache GitHub
-        logger.info("📂 Chargement des followers depuis le cache GitHub...")
+        # Charger depuis le fichier JSON uniquement
+        logger.info("📂 Chargement des followers depuis le fichier JSON GitHub...")
         github_followers = github_cache.load_followers()
 
         if github_followers:
@@ -570,101 +570,13 @@ class Twitch(object):
                 if original_count != len(github_followers):
                     logger.info(f"🚫 {original_count - len(github_followers)} streamer(s) blacklisté(s)")
 
-            logger.info(f"📂 Cache GitHub utilisé : {len(github_followers)} followers")
+            logger.info(f"✅ {len(github_followers)} followers chargés depuis le fichier JSON")
             return github_followers
-
-        # 🚀 NOUVELLE MÉTHODE : Essayer l'API Helix d'abord (ultra rapide)
-        logger.info("🚀 Tentative de chargement via API Twitch Helix (rapide)...")
-        helix_followers = self._get_followers_via_helix_api()
-
-        if helix_followers is not None:
-            # API Helix a réussi !
-            follows = helix_followers
-
-            # Sauvegarder sur GitHub (source de vérité unique)
-            try:
-                success = github_cache.save_followers(follows)
-                if success:
-                    logger.info(
-                        f"📂 Followers sauvegardés sur GitHub : {len(follows)} followers",
-                        extra={"emoji": ":file_folder:"}
-                    )
-                else:
-                    logger.warning("⚠️ Échec sauvegarde GitHub (non bloquant)")
-            except Exception as e:
-                logger.warning(f"⚠️ Erreur sauvegarde GitHub : {e}")
-
-            return follows
-
-        # Fallback: Charger depuis GraphQL API (lent, mais fiable)
-        logger.info(
-            "📥 Chargement des followers depuis Twitch GraphQL (peut prendre plusieurs minutes)...",
-            extra={"emoji": ":inbox_tray:"}
-        )
-
-        # Optimisation: Chargement accéléré avec chunks plus gros et progress
-        json_data = copy.deepcopy(GQLOperations.ChannelFollows)
-        json_data["variables"] = {"limit": 100, "order": str(order)}  # Chunks de 100 au lieu de 20
-
-        has_next = True
-        last_cursor = ""
-        follows = []
-        chunk_count = 0
-        start_time = time.time()
-
-        logger.info("🚀 Chargement optimisé des followers (chunks de 100)...")
-
-        while has_next and len(follows) < limit:
-            json_data["variables"]["cursor"] = last_cursor
-            json_response = self.post_gql_request(json_data)
-            chunk_count += 1
-
-            try:
-                follows_response = json_response["data"]["user"]["follows"]
-                chunk_follows = []
-                last_cursor = None
-
-                for f in follows_response["edges"]:
-                    chunk_follows.append(f["node"]["login"].lower())
-                    last_cursor = f["cursor"]
-
-                follows.extend(chunk_follows)
-                has_next = follows_response["pageInfo"]["hasNextPage"]
-
-                # Progress log toutes les 5 requêtes (500 followers)
-                if chunk_count % 5 == 0:
-                    elapsed = time.time() - start_time
-                    rate = len(follows) / elapsed if elapsed > 0 else 0
-                    logger.info(f"📈 {len(follows)} followers chargés ({rate:.1f}/sec)")
-
-            except KeyError as e:
-                logger.error(f"❌ Erreur récupération followers: {e}")
-                logger.error(f"❌ Réponse API: {json_response}")
-                # Vérifier si c'est une erreur d'authentification
-                if "errors" in json_response:
-                    for error in json_response["errors"]:
-                        logger.error(f"❌ Twitch API Error: {error.get('message', 'Unknown error')}")
-                return []
-
-        # DEBUG: Vérifier la liste avant sauvegarde
-        logger.info(f"🔍 DEBUG: Liste follows avant sauvegarde = {len(follows)} items")
-        if follows:
-            logger.info(f"🔍 DEBUG: Premiers 5 follows = {follows[:5]}")
-
-        # Sauvegarder sur GitHub (source de vérité unique)
-        try:
-            success = github_cache.save_followers(follows)
-            if success:
-                logger.info(
-                    f"📂 Followers sauvegardés sur GitHub : {len(follows)} followers",
-                    extra={"emoji": ":file_folder:"}
-                )
-            else:
-                logger.warning("⚠️ Échec sauvegarde GitHub (non bloquant)")
-        except Exception as e:
-            logger.warning(f"⚠️ Erreur sauvegarde GitHub : {e}")
-
-        return follows
+        else:
+            # Si le fichier n'existe pas ou est vide, retourner une liste vide
+            logger.warning("⚠️ Aucun fichier JSON trouvé ou fichier vide")
+            logger.warning("💡 Le fichier doit être créé manuellement ou via un autre processus")
+            return []
 
     def update_raid(self, streamer, raid):
         if streamer.raid != raid:
