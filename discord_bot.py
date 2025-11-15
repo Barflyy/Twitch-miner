@@ -878,6 +878,7 @@ async def create_or_update_pinned_list(guild):
     
     # Utiliser le canal de commandes (CHANNEL_ID) pour le message épinglé
     if not CHANNEL_ID or CHANNEL_ID == 0:
+        print("⚠️ CHANNEL_ID non défini, impossible de créer message épinglé")
         return
     
     try:
@@ -889,6 +890,11 @@ async def create_or_update_pinned_list(guild):
         # Charger les données
         load_data(force=True)
         
+        # Vérifier qu'on a des données
+        if not streamer_data or len(streamer_data) == 0:
+            print("⏳ En attente des données du miner...")
+            return
+        
         # Trier les streamers : en ligne d'abord, puis hors ligne
         sorted_streamers = sorted(
             streamer_data.items(),
@@ -898,66 +904,67 @@ async def create_or_update_pinned_list(guild):
         online_count = sum(1 for _, d in sorted_streamers if d.get('online', False))
         offline_count = len(sorted_streamers) - online_count
         
-        # Créer le contenu du message
-        content_lines = [
-            "# 📺 LISTE DES STREAMERS",
-            "",
-            f"🟢 **{online_count}** en ligne | 🔴 **{offline_count}** hors ligne | 📋 **{len(sorted_streamers)}** total",
-            "",
-            "## 🟢 STREAMERS EN LIGNE",
-            ""
-        ]
+        # Créer le contenu du message avec embed Discord (plus joli et plus d'espace)
+        embed = discord.Embed(
+            title="📺 LISTE DES STREAMERS",
+            description=f"🟢 **{online_count}** en ligne | 🔴 **{offline_count}** hors ligne | 📋 **{len(sorted_streamers)}** total",
+            color=0x5865F2,
+            timestamp=datetime.utcnow()
+        )
         
-        # Streamers en ligne (limiter à 50 pour éviter message trop long)
+        # Streamers en ligne (limiter à 25 pour éviter embed trop long)
         online_list = []
         for streamer, data in sorted_streamers:
             if data.get('online', False):
                 balance = data.get('balance', 0)
                 balance_str = f"{balance:,.0f}".replace(',', ' ')
-                online_list.append(f"🟢 **{streamer}** - {balance_str} points")
-                if len(online_list) >= 50:
-                    online_list.append(f"... et {online_count - 50} autres")
+                session_points = data.get('session_points', 0)
+                if session_points > 0:
+                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts (+{session_points})")
+                else:
+                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts")
+                if len(online_list) >= 25:
+                    online_list.append(f"... et {online_count - 25} autres")
                     break
         
         if online_list:
-            content_lines.extend(online_list)
+            embed.add_field(
+                name=f"🟢 STREAMERS EN LIGNE ({online_count})",
+                value="\n".join(online_list) if len("\n".join(online_list)) < 1024 else "\n".join(online_list[:20]) + f"\n... et {online_count - 20} autres",
+                inline=False
+            )
         else:
-            content_lines.append("Aucun streamer en ligne actuellement")
+            embed.add_field(
+                name="🟢 STREAMERS EN LIGNE",
+                value="Aucun streamer en ligne actuellement",
+                inline=False
+            )
         
-        content_lines.extend([
-            "",
-            "## 🔴 STREAMERS HORS LIGNE",
-            ""
-        ])
-        
-        # Streamers hors ligne (limiter à 50)
+        # Streamers hors ligne (limiter à 25)
         offline_list = []
         for streamer, data in sorted_streamers:
             if not data.get('online', False):
                 balance = data.get('balance', 0)
                 balance_str = f"{balance:,.0f}".replace(',', ' ')
-                offline_list.append(f"🔴 **{streamer}** - {balance_str} points")
-                if len(offline_list) >= 50:
-                    offline_list.append(f"... et {offline_count - 50} autres")
+                offline_list.append(f"🔴 **{streamer}** - {balance_str} pts")
+                if len(offline_list) >= 25:
+                    offline_list.append(f"... et {offline_count - 25} autres")
                     break
         
         if offline_list:
-            content_lines.extend(offline_list)
+            embed.add_field(
+                name=f"🔴 STREAMERS HORS LIGNE ({offline_count})",
+                value="\n".join(offline_list) if len("\n".join(offline_list)) < 1024 else "\n".join(offline_list[:20]) + f"\n... et {offline_count - 20} autres",
+                inline=False
+            )
         else:
-            content_lines.append("Aucun streamer hors ligne")
+            embed.add_field(
+                name="🔴 STREAMERS HORS LIGNE",
+                value="Aucun streamer hors ligne",
+                inline=False
+            )
         
-        content_lines.extend([
-            "",
-            "---",
-            "💡 Utilisez `!status <streamer>` pour voir les détails d'un streamer",
-            "🔄 Mise à jour automatique toutes les 30 secondes"
-        ])
-        
-        content = "\n".join(content_lines)
-        
-        # Limiter à 2000 caractères (limite Discord)
-        if len(content) > 2000:
-            content = content[:1990] + "\n... (trop de streamers pour afficher)"
+        embed.set_footer(text="💡 Utilisez !status <streamer> pour les détails • Mise à jour auto toutes les 30s")
         
         # Créer ou mettre à jour le message
         if pinned_list_message_id:
@@ -1001,8 +1008,14 @@ async def update_channels():
                     guild = channel.guild
                     await create_or_update_pinned_list(guild)
                     return  # Ne pas créer de salons individuels
+                else:
+                    print(f"⚠️ Canal {CHANNEL_ID} introuvable pour message épinglé")
+            else:
+                print(f"⚠️ CHANNEL_ID non défini ({CHANNEL_ID}), impossible d'utiliser message épinglé")
         except Exception as e:
             print(f"⚠️ Erreur système message épinglé, fallback salons individuels : {e}")
+            import traceback
+            traceback.print_exc()
             USE_PINNED_MESSAGE = False  # Désactiver si erreur
     
     # ANCIEN SYSTÈME : Salons individuels (fallback)
