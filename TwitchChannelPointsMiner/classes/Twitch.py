@@ -263,7 +263,7 @@ class Twitch(object):
             cookies_dir.mkdir(parents=True, exist_ok=True)
             cache_file = cookies_dir / f"followers_cache_{self.twitch_login.username}.json"
         
-        cache_max_age = 12 * 3600  # 12 heures pour réduire les appels API (1h = 3600, 24h = 86400)
+        cache_max_age = 24 * 3600  # 24 heures - followers changent peu (1h = 3600, 48h = 172800)
         
         # Vérifier si le cache existe et est récent
         if cache_file.exists():
@@ -322,26 +322,41 @@ class Twitch(object):
             extra={"emoji": ":inbox_tray:"}
         )
         
+        # Optimisation: Chargement accéléré avec chunks plus gros et progress
         json_data = copy.deepcopy(GQLOperations.ChannelFollows)
-        json_data["variables"] = {"limit": limit, "order": str(order)}
+        json_data["variables"] = {"limit": 100, "order": str(order)}  # Chunks de 100 au lieu de 20
+        
         has_next = True
         last_cursor = ""
         follows = []
-        while has_next is True:
+        chunk_count = 0
+        start_time = time.time()
+        
+        logger.info("🚀 Chargement optimisé des followers (chunks de 100)...")
+        
+        while has_next and len(follows) < limit:
             json_data["variables"]["cursor"] = last_cursor
             json_response = self.post_gql_request(json_data)
-            
-            # Debug: afficher la réponse
-            logger.debug(f"GQL Response: {json_response}")
+            chunk_count += 1
             
             try:
                 follows_response = json_response["data"]["user"]["follows"]
+                chunk_follows = []
                 last_cursor = None
+                
                 for f in follows_response["edges"]:
-                    follows.append(f["node"]["login"].lower())
+                    chunk_follows.append(f["node"]["login"].lower())
                     last_cursor = f["cursor"]
-
+                
+                follows.extend(chunk_follows)
                 has_next = follows_response["pageInfo"]["hasNextPage"]
+                
+                # Progress log toutes les 5 requêtes (500 followers)
+                if chunk_count % 5 == 0:
+                    elapsed = time.time() - start_time
+                    rate = len(follows) / elapsed if elapsed > 0 else 0
+                    logger.info(f"📈 {len(follows)} followers chargés ({rate:.1f}/sec)")
+                    
             except KeyError as e:
                 logger.error(f"❌ Erreur récupération followers: {e}")
                 logger.error(f"❌ Réponse API: {json_response}")
