@@ -1240,34 +1240,16 @@ async def update_channels():
     # 🆕 NOUVEAU SYSTÈME : Message épinglé unique
     if USE_PINNED_MESSAGE:
         try:
-            if CHANNEL_ID and CHANNEL_ID != 0:
-                # Essayer de trouver le canal de plusieurs façons
-                channel = bot.get_channel(CHANNEL_ID)
+            # Le bot crée automatiquement le canal, pas besoin de CHANNEL_ID
+            # Utiliser le premier guild disponible
+            for guild in bot.guilds:
+                # Nettoyer les anciens salons au premier démarrage (une seule fois)
+                if not pinned_list_message_id and CATEGORY_ID and CATEGORY_ID != 0:
+                    print("🧹 Nettoyage des anciens salons individuels...")
+                    await cleanup_old_channels(guild)
                 
-                # Si pas trouvé, chercher dans tous les guilds
-                if not channel:
-                    for guild in bot.guilds:
-                        channel = guild.get_channel(CHANNEL_ID)
-                        if channel:
-                            break
-                
-                if channel:
-                    guild = channel.guild
-                    
-                    # Nettoyer les anciens salons au premier démarrage (une seule fois)
-                    if not pinned_list_message_id and CATEGORY_ID and CATEGORY_ID != 0:
-                        print("🧹 Nettoyage des anciens salons individuels...")
-                        await cleanup_old_channels(guild)
-                    
-                    await create_or_update_pinned_list(guild)
-                    return  # Ne pas créer de salons individuels
-                else:
-                    print(f"⚠️ Canal {CHANNEL_ID} introuvable pour message épinglé")
-                    print(f"💡 Vérifiez que DISCORD_CHANNEL_ID={CHANNEL_ID} est correct et que le bot a accès au canal")
-                    # Ne pas désactiver USE_PINNED_MESSAGE, juste ne pas créer de salons
-                    return
-            else:
-                print(f"⚠️ CHANNEL_ID non défini ({CHANNEL_ID}), impossible d'utiliser message épinglé")
+                await create_or_update_pinned_list(guild)
+                return  # Ne pas créer de salons individuels
         except Exception as e:
             print(f"⚠️ Erreur système message épinglé : {e}")
             import traceback
