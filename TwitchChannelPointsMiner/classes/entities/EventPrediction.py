@@ -42,8 +42,10 @@ class EventPrediction(object):
         self.bet_confirmed = False
         self.bet_placed = False
         self.bet = Bet(outcomes, streamer.settings.bet)
-        # Passer le titre à la stratégie Bet pour le logging (via attribut dynamique)
+        # Passer les infos à la stratégie Bet pour le logging (via attributs)
         self.bet._event_title = self.title
+        self.bet._streamer_id = str(streamer.channel_id) if hasattr(streamer, 'channel_id') else ""
+        self.bet._streamer_name = streamer.username if hasattr(streamer, 'username') else ""
 
     def __repr__(self):
         return f"EventPrediction(event_id={self.event_id}, streamer={self.streamer}, title={self.title})"

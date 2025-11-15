@@ -15,6 +15,7 @@ class Strategy(Enum):
     SMART_MONEY = auto()
     SMART = auto()
     CROWD_WISDOM = auto()  # Nouvelle stratégie basée sur l'intelligence collective
+    ADAPTIVE = auto()  # Stratégie adaptive basée sur le profil du streamer
     NUMBER_1 = auto()
     NUMBER_2 = auto()
     NUMBER_3 = auto()
@@ -135,7 +136,7 @@ class BetSettings(object):
 
 
 class Bet(object):
-    __slots__ = ["outcomes", "decision", "total_users", "total_points", "settings", "_event_title"]
+    __slots__ = ["outcomes", "decision", "total_users", "total_points", "settings", "_event_title", "_streamer_id", "_streamer_name"]
 
     def __init__(self, outcomes: list, settings: BetSettings):
         self.outcomes = outcomes
@@ -145,6 +146,8 @@ class Bet(object):
         self.total_points = 0
         self.settings = settings
         self._event_title = ""  # Titre de l'événement pour logging (utilisé par CROWD_WISDOM)
+        self._streamer_id = ""  # ID du streamer pour stratégie ADAPTIVE
+        self._streamer_name = ""  # Nom du streamer pour stratégie ADAPTIVE
 
     def update_outcomes(self, outcomes):
         for index in range(0, len(self.outcomes)):
@@ -291,6 +294,54 @@ class Bet(object):
 
     def calculate(self, balance: int) -> dict:
         self.decision = {"choice": None, "amount": 0, "id": None}
+        
+        # Stratégie ADAPTIVE basée sur le profil du streamer
+        if self.settings.strategy == Strategy.ADAPTIVE:
+            try:
+                from TwitchChannelPointsMiner.classes.entities.AdaptiveBetStrategy import (
+                    AdaptiveBetStrategy
+                )
+                
+                # Créer la stratégie adaptive
+                adaptive_strategy = AdaptiveBetStrategy()
+                
+                # Récupérer les infos du streamer depuis l'event si disponible
+                streamer_id = getattr(self, '_streamer_id', "")
+                streamer_name = getattr(self, '_streamer_name', "")
+                event_title = getattr(self, '_event_title', "")
+                
+                # Utiliser la stratégie adaptive
+                decision = adaptive_strategy.make_decision(
+                    outcomes=self.outcomes,
+                    balance=balance,
+                    streamer_id=streamer_id,
+                    streamer_name=streamer_name,
+                    prediction_title=event_title,
+                    base_percentage=self.settings.percentage if self.settings.percentage else 5.0,
+                    max_bet=self.settings.max_points if self.settings.max_points else 50000,
+                    min_bet=10
+                )
+                
+                if decision:
+                    self.decision["choice"] = decision.get("choice")
+                    self.decision["amount"] = decision.get("amount", 0)
+                    self.decision["id"] = decision.get("id")
+                    self.decision["reason"] = decision.get("reason", "Adaptive Strategy")
+                    return self.decision
+                else:
+                    # Skip le bet si la stratégie retourne None
+                    return self.decision
+                    
+            except ImportError as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Impossible d'importer AdaptiveBetStrategy, fallback vers CROWD_WISDOM: {e}")
+                self.settings.strategy = Strategy.CROWD_WISDOM
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Erreur dans ADAPTIVE, fallback vers CROWD_WISDOM: {e}")
+                self.settings.strategy = Strategy.CROWD_WISDOM
         
         # Nouvelle stratégie CROWD_WISDOM basée sur l'intelligence collective
         if self.settings.strategy == Strategy.CROWD_WISDOM:

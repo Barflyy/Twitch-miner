@@ -412,6 +412,55 @@ class WebSocketsPool:
                                 ws.streamers[streamer_index].update_history(
                                     "PREDICTION", points["gained"]
                                 )
+                                
+                                # Logger la prédiction dans le profiler (si disponible)
+                                try:
+                                    from TwitchChannelPointsMiner.classes.entities.StreamerPredictionProfiler import (
+                                        StreamerPredictionProfiler
+                                    )
+                                    profiler = StreamerPredictionProfiler()
+                                    
+                                    # Détermine le gagnant (0 ou 1)
+                                    winning_outcome_id = message.data["prediction"].get("winning_outcome_id")
+                                    winner = None
+                                    if winning_outcome_id:
+                                        # Trouve l'index de l'outcome gagnant
+                                        for idx, outcome in enumerate(event_prediction.bet.outcomes):
+                                            if outcome.get("id") == winning_outcome_id:
+                                                winner = idx
+                                                break
+                                    
+                                    # Prépare les données pour le profiler
+                                    prediction_data = {
+                                        'streamer_id': str(event_prediction.streamer.channel_id),
+                                        'streamer_name': event_prediction.streamer.username,
+                                        'title': event_prediction.title,
+                                        'game': '',  # Pas disponible dans EventPrediction
+                                        'outcomes': [
+                                            {
+                                                'title': event_prediction.bet.outcomes[0].get('title', ''),
+                                                'percentage_users': event_prediction.bet.outcomes[0].get('percentage_users', 0),
+                                                'odds': event_prediction.bet.outcomes[0].get('odds', 0)
+                                            },
+                                            {
+                                                'title': event_prediction.bet.outcomes[1].get('title', ''),
+                                                'percentage_users': event_prediction.bet.outcomes[1].get('percentage_users', 0),
+                                                'odds': event_prediction.bet.outcomes[1].get('odds', 0)
+                                            }
+                                        ],
+                                        'winner': winner,
+                                        'bet_placed': 1 if event_prediction.bet_placed else 0,
+                                        'bet_choice': choice if event_prediction.bet_placed else None,
+                                        'bet_amount': event_prediction.bet.decision.get('amount', 0) if event_prediction.bet_placed else 0,
+                                        'payout': points.get('won', 0) if event_prediction.result['type'] == 'WIN' else 0
+                                    }
+                                    
+                                    profiler.log_prediction(prediction_data)
+                                    profiler.close()
+                                    
+                                except Exception as e:
+                                    # Ne pas bloquer si le profiler échoue
+                                    logger.debug(f"Erreur lors du logging dans le profiler: {e}")
 
                                 # Remove duplicate history records from previous message sent in community-points-user-v1
                                 if event_prediction.result["type"] == "REFUND":
