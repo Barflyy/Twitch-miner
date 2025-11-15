@@ -254,13 +254,13 @@ try:
                     # Utiliser l'API Helix pour récupérer les followers
                     helix_followers = twitch_miner.twitch._get_followers_via_helix_api()
                     if helix_followers and len(helix_followers) > 0:
-                    # Sauvegarder dans le fichier JSON
-                    import sys
-                    from pathlib import Path as PathLib
-                    # Utiliser le répertoire courant au lieu de __file__ (non disponible dans thread)
-                    current_dir = PathLib.cwd()
-                    sys.path.append(str(current_dir))
-                    from github_cache import get_github_cache
+                        # Sauvegarder dans le fichier JSON
+                        import sys
+                        from pathlib import Path as PathLib
+                        # Utiliser le répertoire courant au lieu de __file__ (non disponible dans thread)
+                        current_dir = PathLib.cwd()
+                        sys.path.append(str(current_dir))
+                        from github_cache import get_github_cache
                         github_cache = get_github_cache(username)
                         success = github_cache.save_followers(helix_followers)
                         if success:
