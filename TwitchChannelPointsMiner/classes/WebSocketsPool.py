@@ -322,16 +322,37 @@ class WebSocketsPool:
                                             )
                                             start_after = 3600
 
+                                        # Créer une fonction wrapper pour logger l'exécution
+                                        def bet_timer_callback(event_arg):
+                                            try:
+                                                logger.info(
+                                                    f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status})",
+                                                    extra={
+                                                        "emoji": ":alarm_clock:",
+                                                        "event": Events.BET_START,
+                                                    },
+                                                )
+                                                ws.twitch.make_predictions(event_arg)
+                                            except Exception as e:
+                                                logger.error(
+                                                    f"❌ Erreur dans Timer bet pour {event_arg.event_id}: {e}",
+                                                    extra={
+                                                        "emoji": ":warning:",
+                                                        "event": Events.BET_FAILED,
+                                                    },
+                                                    exc_info=True,
+                                                )
+                                        
                                         place_bet_thread = Timer(
                                             start_after,
-                                            ws.twitch.make_predictions,
+                                            bet_timer_callback,
                                             (ws.events_predictions[event_id],),
                                         )
                                         place_bet_thread.daemon = False  # Non-daemon pour s'assurer qu'il s'exécute
                                         place_bet_thread.start()
 
                                         logger.info(
-                                            f"Place the bet after: {start_after}s for: {ws.events_predictions[event_id]}",
+                                            f"Place the bet after: {start_after}s ({start_after/60:.1f} min) for: {ws.events_predictions[event_id]}",
                                             extra={
                                                 "emoji": ":alarm_clock:",
                                                 "event": Events.BET_START,
