@@ -1,5 +1,5 @@
 app = "twitch-miner"
-primary_region = "iad"
+primary_region = "ams"  # Amsterdam, Pays-Bas (proche de la Belgique)
 
 [build]
 
