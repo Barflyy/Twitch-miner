@@ -951,32 +951,45 @@ async def cleanup_pinned_channel(guild):
         category_name = "📺 TWITCH MINER - LISTE"
         channel_name = "📋-liste-streamers"
         
-        # Supprimer le canal s'il existe
-        if pinned_list_channel_id:
-            channel = guild.get_channel(pinned_list_channel_id)
-            if channel:
+        deleted_channels = 0
+        deleted_categories = 0
+        
+        # 1. Supprimer tous les canaux avec le nom "📋-liste-streamers" (peu importe où ils sont)
+        for channel in guild.text_channels:
+            if channel.name == channel_name:
                 try:
                     await channel.delete()
+                    deleted_channels += 1
                     print(f"🗑️ Canal {channel_name} supprimé")
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠️ Erreur suppression canal {channel_name}: {e}")
         
-        # Chercher et supprimer la catégorie
+        # 2. Chercher et supprimer toutes les catégories avec le nom "📺 TWITCH MINER - LISTE"
+        categories_to_delete = []
         for category in guild.categories:
             if category.name == category_name:
+                categories_to_delete.append(category)
+        
+        # Supprimer tous les canaux restants dans ces catégories
+        for category in categories_to_delete:
+            for ch in list(category.channels):  # Utiliser list() pour éviter les modifications pendant l'itération
                 try:
-                    # Supprimer tous les canaux de la catégorie d'abord
-                    for ch in category.channels:
-                        try:
-                            await ch.delete()
-                        except:
-                            pass
-                    # Supprimer la catégorie
-                    await category.delete()
-                    print(f"🗑️ Catégorie {category_name} supprimée")
-                except:
-                    pass
-                break
+                    await ch.delete()
+                    deleted_channels += 1
+                except Exception as e:
+                    print(f"⚠️ Erreur suppression canal dans catégorie: {e}")
+        
+        # Supprimer les catégories
+        for category in categories_to_delete:
+            try:
+                await category.delete()
+                deleted_categories += 1
+                print(f"🗑️ Catégorie {category_name} supprimée")
+            except Exception as e:
+                print(f"⚠️ Erreur suppression catégorie {category_name}: {e}")
+        
+        if deleted_channels > 0 or deleted_categories > 0:
+            print(f"✅ Nettoyage terminé : {deleted_channels} canal(x) et {deleted_categories} catégorie(s) supprimé(s)")
         
         # Réinitialiser les IDs
         pinned_list_channel_id = None
@@ -985,6 +998,8 @@ async def cleanup_pinned_channel(guild):
     
     except Exception as e:
         print(f"⚠️ Erreur nettoyage canal épinglé : {e}")
+        import traceback
+        traceback.print_exc()
 
 async def create_or_update_pinned_list(guild):
     """🆕 Crée ou met à jour le message épinglé unique qui liste tous les streamers"""
