@@ -1106,30 +1106,6 @@ async def create_or_update_pinned_list(guild):
                 inline=False
             )
         
-        # Streamers hors ligne (limiter à 25)
-        offline_list = []
-        for streamer, data in sorted_streamers:
-            if not data.get('online', False):
-                balance = data.get('balance', 0)
-                balance_str = f"{balance:,.0f}".replace(',', ' ')
-                offline_list.append(f"🔴 **{streamer}** - {balance_str} pts")
-                if len(offline_list) >= 25:
-                    offline_list.append(f"... et {offline_count - 25} autres")
-                    break
-        
-        if offline_list:
-            embed.add_field(
-                name=f"🔴 STREAMERS HORS LIGNE ({offline_count})",
-                value="\n".join(offline_list) if len("\n".join(offline_list)) < 1024 else "\n".join(offline_list[:20]) + f"\n... et {offline_count - 20} autres",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🔴 STREAMERS HORS LIGNE",
-                value="Aucun streamer hors ligne",
-                inline=False
-            )
-        
         embed.set_footer(text="💡 Utilisez !status <streamer> pour les détails • Mise à jour auto toutes les 30s")
         
         # Créer ou mettre à jour le message
