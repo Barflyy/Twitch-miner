@@ -91,9 +91,9 @@ class GitHubCache:
             if data['username'] != self.username:
                 return False
             
-            # Vérifier l'âge (48h max pour le cache GitHub)
+            # Vérifier l'âge (7 jours max pour le cache GitHub - très permissif)
             cache_age = time.time() - data['timestamp']
-            max_age = 48 * 3600  # 48 heures
+            max_age = 7 * 24 * 3600  # 7 jours
             
             return cache_age < max_age
             

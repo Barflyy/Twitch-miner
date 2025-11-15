@@ -252,9 +252,8 @@ class Twitch(object):
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
-        # 🚀 CACHE HYBRIDE : GitHub (permanent) + Local (rapide)
-        # 1. GitHub Cache = persistance absolue via Git commits
-        # 2. Local Cache = accès ultra-rapide
+        # 🚀 CACHE GITHUB UNIQUE : Source de vérité absolue
+        # Le fichier GitHub followers_data/username_followers.json contient TOUS les follows
         
         # Importer le cache GitHub
         import sys
@@ -263,77 +262,10 @@ class Twitch(object):
         
         github_cache = get_github_cache(self.twitch_login.username)
         
-        # Cache local pour accès rapide
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            # Railway : utiliser le répertoire du projet (persiste avec le code)
-            cache_file = Path(f".followers_cache_{self.twitch_login.username}.json")
-        else:
-            # Local : utiliser le dossier cookies (même persistance que l'authentification)
-            cookies_dir = Path("cookies")
-            cookies_dir.mkdir(parents=True, exist_ok=True)
-            cache_file = cookies_dir / f"followers_cache_{self.twitch_login.username}.json"
-        
-        cache_max_age = 24 * 3600  # 24 heures - followers changent peu (1h = 3600, 48h = 172800)
-        
-        # Vérifier si le cache existe et est récent
-        if cache_file.exists():
-            try:
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    cache_data = json.load(f)
-                
-                # Vérifications de validité du cache
-                cache_username = cache_data.get('username', '')
-                cache_count = cache_data.get('count', 0)
-                
-                if cache_username != self.twitch_login.username:
-                    logger.warning(f"⚠️ Cache invalide : appartient à {cache_username}, pas à {self.twitch_login.username}")
-                    cache_file.unlink()  # Supprimer le cache invalide
-                elif cache_count < 200:  # Si le cache a moins de 200 followers, il est incomplet
-                    logger.warning(f"⚠️ Cache incomplet ({cache_count} followers), rechargement complet...")
-                    cache_file.unlink()  # Supprimer le cache incomplet
-                else:
-                    cache_time = cache_data.get('timestamp', 0)
-                    cache_age = time.time() - cache_time
-                    
-                    if cache_age < cache_max_age:
-                        follows = cache_data.get('followers', [])
-                        # Validation des données du cache
-                        if not isinstance(follows, list):
-                            logger.warning("⚠️ Cache corrompu : format invalide")
-                            cache_file.unlink()
-                        else:
-                            # Filtrer la blacklist lors du chargement du cache
-                            if blacklist:
-                                original_count = len(follows)
-                                follows = [f for f in follows if f.lower() not in [b.lower() for b in blacklist]]
-                                if original_count != len(follows):
-                                    logger.info(
-                                        f"🚫 {original_count - len(follows)} streamer(s) blacklisté(s) retiré(s) du cache",
-                                        extra={"emoji": ":no_entry_sign:"}
-                                    )
-                            hours_old = cache_age / 3600
-                            logger.info(
-                                f"⚡ Cache local utilisé : {len(follows)} followers (mis à jour il y a {hours_old:.1f}h)",
-                                extra={"emoji": ":zap:"}
-                            )
-                            return follows
-                    else:
-                        logger.info(
-                            f"🔄 Cache expiré ({cache_age / 3600:.1f}h), rechargement...",
-                            extra={"emoji": ":arrows_counterclockwise:"}
-                        )
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning(f"⚠️ Cache corrompu, suppression : {e}")
-                try:
-                    cache_file.unlink()
-                except:
-                    pass
-            except Exception as e:
-                logger.warning(f"⚠️ Erreur lecture cache local : {e}")
-        
-        # Essayer le cache GitHub si pas de cache local
-        logger.info("🔍 Vérification cache GitHub...")
+        # Essayer de charger depuis le cache GitHub
+        logger.info("📂 Chargement des followers depuis le cache GitHub...")
         github_followers = github_cache.load_followers()
+        
         if github_followers:
             # Filtrer la blacklist
             if blacklist:
@@ -342,21 +274,7 @@ class Twitch(object):
                 if original_count != len(github_followers):
                     logger.info(f"🚫 {original_count - len(github_followers)} streamer(s) blacklisté(s)")
             
-            # Recréer le cache local à partir du GitHub
-            try:
-                cache_data = {
-                    'timestamp': time.time(),
-                    'username': self.twitch_login.username,
-                    'followers': github_followers,
-                    'count': len(github_followers),
-                    'version': '3.0'
-                }
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(cache_data, f, indent=2, ensure_ascii=False)
-                logger.info(f"📂 Cache local restauré depuis GitHub : {len(github_followers)} followers")
-            except:
-                pass  # Non bloquant
-                
+            logger.info(f"📂 Cache GitHub utilisé : {len(github_followers)} followers")
             return github_followers
         
         # Charger depuis Twitch API (lent, mais optimisé)
@@ -409,39 +327,18 @@ class Twitch(object):
                         logger.error(f"❌ Twitch API Error: {error.get('message', 'Unknown error')}")
                 return []
         
-        # Sauvegarder le cache pour les prochains redémarrages (persistance renforcée)
+        # Sauvegarder sur GitHub (source de vérité unique)
         try:
-            cache_data = {
-                'timestamp': time.time(),
-                'username': self.twitch_login.username,  # Identifier le propriétaire du cache
-                'followers': follows,
-                'count': len(follows),
-                'version': '2.0'  # Version du cache pour futures migrations
-            }
-            
-            # Écriture atomique pour éviter la corruption du cache
-            temp_cache_file = cache_file.with_suffix('.tmp')
-            with open(temp_cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, indent=2, ensure_ascii=False)
-            
-            # Renommer pour remplacer l'ancien cache (opération atomique)
-            temp_cache_file.replace(cache_file)
-            
-            logger.info(
-                f"💾 Cache local sauvegardé : {len(follows)} followers (valide 24h) → {cache_file}",
-                extra={"emoji": ":floppy_disk:"}
-            )
-            
-            # Sauvegarder aussi sur GitHub (backup permanent)
-            github_cache.save_followers(follows)
+            success = github_cache.save_followers(follows)
+            if success:
+                logger.info(
+                    f"📂 Followers sauvegardés sur GitHub : {len(follows)} followers",
+                    extra={"emoji": ":file_folder:"}
+                )
+            else:
+                logger.warning("⚠️ Échec sauvegarde GitHub (non bloquant)")
         except Exception as e:
-            logger.warning(f"⚠️ Erreur sauvegarde cache : {e}")
-            # Nettoyer le fichier temporaire en cas d'erreur
-            if 'temp_cache_file' in locals() and temp_cache_file.exists():
-                try:
-                    temp_cache_file.unlink()
-                except:
-                    pass
+            logger.warning(f"⚠️ Erreur sauvegarde GitHub : {e}")
         
         return follows
 

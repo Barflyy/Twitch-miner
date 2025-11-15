@@ -1,13 +1,14 @@
-# 📂 Followers Data - Cache Permanent GitHub
+# 📂 Followers Data - Cache GitHub Unique
 
-Ce dossier contient les fichiers de cache permanent des followers Twitch.
+Ce dossier contient **LA SEULE SOURCE DE VÉRITÉ** pour les followers Twitch.
 
 ## 🎯 Fonctionnement
 
-- **Persistance absolue** : Survit à tous les redéploiements/crashes
+- **Source unique** : Le fichier GitHub est la seule référence
+- **Persistance absolue** : Survit à tous les redéploiements/crashes  
 - **Historique Git** : Toutes les modifications sont trackées
 - **Auto-commit Railway** : Mise à jour automatique en production
-- **Fallback intelligent** : Si cache local perdu, restore depuis GitHub
+- **Éditable** : Tu peux modifier manuellement tes followers
 
 ## 📁 Structure
 
@@ -31,19 +32,28 @@ followers_data/
 }
 ```
 
-## 🔄 Synchronisation
+## 🔄 Flux de données
 
-- **Railway → GitHub** : Auto-commit à chaque mise à jour followers
-- **GitHub → Local** : Auto-restore si cache local perdu
-- **Durée de vie** : 48h (GitHub) vs 24h (local)
+1. **Premier lancement** : Charge depuis Twitch API → Sauvegarde GitHub
+2. **Démarrages suivants** : Charge uniquement depuis GitHub  
+3. **Modification manuelle** : Tu peux éditer le fichier directement
+4. **Auto-commit** : Railway commit automatiquement les changements
 
 ## ✅ Avantages
 
-1. **Zéro perte de données** - même si Railway crash
-2. **Visible sur GitHub** - tu peux voir tes followers en ligne
-3. **Éditable manuellement** - ajouter/retirer des streamers
-4. **Multi-environnement** - sync entre local/Railway/autres
-5. **Backup automatique** - commit Git à chaque changement
+1. **Source unique** - pas de confusion entre caches
+2. **Éditable en ligne** - ajouter/retirer des streamers depuis GitHub
+3. **Zéro perte** - même si Railway crash complètement
+4. **Historique complet** - voir l'évolution de tes follows
+5. **Multi-environnement** - sync automatique local/Railway
+
+## ✏️ Modification manuelle
+
+Pour ajouter/retirer des streamers :
+1. Va sur GitHub → `followers_data/barflyy__followers.json`
+2. Clique "Edit" ✏️  
+3. Modifie la liste `"followers"`
+4. Commit → le bot utilisera automatiquement la nouvelle liste
 
 ---
-*Généré automatiquement par le Twitch Miner*
+*Cache GitHub unique - Source de vérité absolue*
