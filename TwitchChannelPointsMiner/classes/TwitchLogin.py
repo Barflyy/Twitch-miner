@@ -80,6 +80,7 @@ class TwitchLogin(object):
             "scopes": (
                 "channel_read chat:read user_blocks_edit "
                 "user_blocks_read user_follows_edit user_read "
+                "user:read:follows "
                 "channel:read:predictions channel:manage:predictions"
             )
         }
