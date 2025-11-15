@@ -1216,8 +1216,14 @@ class Twitch(object):
         decision = event.bet.calculate(event.streamer.channel_points)
         # selector_index = 0 if decision["choice"] == "A" else 1
 
+        # Log avec la raison si disponible (pour CROWD_WISDOM)
+        reason = decision.get("reason", "")
+        log_message = f"Going to complete bet for {event}"
+        if reason:
+            log_message += f" - {reason}"
+
         logger.info(
-            f"Going to complete bet for {event}",
+            log_message,
             extra={
                 "emoji": ":four_leaf_clover:",
                 "event": Events.BET_GENERAL,

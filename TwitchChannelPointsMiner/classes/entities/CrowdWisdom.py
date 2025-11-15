@@ -1,0 +1,394 @@
+"""
+Stratégie de betting basée sur l'intelligence collective des viewers.
+Analyse les patterns de paris pour détecter les signaux des parieurs informés.
+"""
+
+import logging
+from typing import Optional, Dict, List
+from TwitchChannelPointsMiner.classes.entities.Bet import OutcomeKeys
+
+logger = logging.getLogger(__name__)
+
+
+class CrowdWisdomConfig:
+    """Configuration de la stratégie basée sur la foule."""
+
+    # Seuils pour consensus
+    STRONG_CONSENSUS_THRESHOLD = 75  # % minimum
+    WEAK_CONSENSUS_THRESHOLD = 60
+
+    # Seuils pour conviction
+    HIGH_CONVICTION_AVG_BET = 5000   # Points
+    MEDIUM_CONVICTION_AVG_BET = 2000
+
+    # Seuils pour sharp detection
+    SHARP_AVG_BET_RATIO = 1.5        # Minorité doit miser 50% plus
+    SHARP_MINORITY_MAX = 40          # % max pour être "minorité"
+
+    # Seuils pour money flow divergence
+    SIGNIFICANT_RATIO_DIFF = 1.3     # 30% de différence minimum
+
+    # Montants
+    BASE_PERCENTAGE = 5.0            # % de base de la bankroll
+    MIN_BET = 50
+    MAX_BET = 50000
+    MAX_BANKROLL_RISK = 0.15         # Max 15% sur un bet
+
+    # Filtres
+    MIN_TOTAL_USERS = 150            # Skip si < 150 participants
+    MIN_BET_SAMPLE = 10              # Skip si < 10 bets par option
+
+
+class BetPatternAnalyzer:
+    """Analyse les patterns de paris pour détecter l'information cachée."""
+
+    def __init__(self, config: CrowdWisdomConfig = None):
+        self.config = config or CrowdWisdomConfig()
+
+    def analyze_betting_pattern(self, outcomes: List[Dict]) -> Dict:
+        """
+        Extrait les signaux des comportements de paris.
+
+        Args:
+            outcomes: Liste des outcomes avec leurs statistiques
+
+        Returns:
+            dict avec les insights détectés
+        """
+        if len(outcomes) < 2:
+            return {}
+
+        option_1 = outcomes[0]
+        option_2 = outcomes[1]
+
+        analysis = {
+            "consensus_type": self._detect_consensus_type(option_1, option_2),
+            "money_flow": self._detect_money_flow(option_1, option_2),
+            "conviction_level": self._detect_conviction(option_1, option_2),
+            "sharp_signal": self._detect_sharp_bettors(option_1, option_2)
+        }
+
+        return analysis
+
+    def _detect_consensus_type(self, opt1: Dict, opt2: Dict) -> str:
+        """
+        Identifie le type de consensus.
+
+        Types:
+        - strong_consensus: >75% sur une option → viewers sont sûrs
+        - weak_consensus: 60-75% → légère préférence
+        - divided: 40-60% → incertitude totale
+        """
+        pct1 = opt1.get(OutcomeKeys.PERCENTAGE_USERS, 0)
+        pct2 = opt2.get(OutcomeKeys.PERCENTAGE_USERS, 0)
+
+        max_pct = max(pct1, pct2)
+
+        if max_pct > self.config.STRONG_CONSENSUS_THRESHOLD:
+            return "strong_consensus"
+        elif max_pct > self.config.WEAK_CONSENSUS_THRESHOLD:
+            return "weak_consensus"
+        else:
+            return "divided"
+
+    def _detect_money_flow(self, opt1: Dict, opt2: Dict) -> Dict:
+        """
+        Analyse où va l'argent (gros parieurs vs petits).
+
+        INSIGHT CLÉ: Si TOP_POINTS est élevé sur une option minoritaire,
+        ça signifie que des gros parieurs (probablement + informés)
+        parient contre la foule.
+        """
+        # Calcul du bet moyen par option
+        total_users_1 = opt1.get(OutcomeKeys.TOTAL_USERS, 0)
+        total_users_2 = opt2.get(OutcomeKeys.TOTAL_USERS, 0)
+        total_points_1 = opt1.get(OutcomeKeys.TOTAL_POINTS, 0)
+        total_points_2 = opt2.get(OutcomeKeys.TOTAL_POINTS, 0)
+
+        avg_bet_1 = total_points_1 / total_users_1 if total_users_1 > 0 else 0
+        avg_bet_2 = total_points_2 / total_users_2 if total_users_2 > 0 else 0
+
+        # Ratio du plus gros bet
+        top_points_1 = opt1.get(OutcomeKeys.TOP_POINTS, 0)
+        top_points_2 = opt2.get(OutcomeKeys.TOP_POINTS, 0)
+        top_ratio = top_points_1 / top_points_2 if top_points_2 > 0 else 999
+
+        # Ratio des bets moyens
+        avg_ratio = avg_bet_1 / avg_bet_2 if avg_bet_2 > 0 else 999
+
+        return {
+            "avg_bet_option_1": int(avg_bet_1),
+            "avg_bet_option_2": int(avg_bet_2),
+            "avg_ratio": round(avg_ratio, 2),
+            "top_bet_option_1": top_points_1,
+            "top_bet_option_2": top_points_2,
+            "top_ratio": round(top_ratio, 2),
+            "big_money_on": 1 if avg_bet_1 > avg_bet_2 else 2
+        }
+
+    def _detect_conviction(self, opt1: Dict, opt2: Dict) -> Dict:
+        """
+        Mesure la conviction des parieurs.
+
+        Haute conviction = gros bets moyens + gros TOP_POINTS
+        Basse conviction = petits bets moyens même avec beaucoup d'users
+        """
+        money_flow = self._detect_money_flow(opt1, opt2)
+
+        # Si bet moyen > 5000 points → haute conviction
+        # Si bet moyen < 1000 points → basse conviction
+        avg_1 = money_flow["avg_bet_option_1"]
+        avg_2 = money_flow["avg_bet_option_2"]
+
+        conviction_1 = "high" if avg_1 > self.config.HIGH_CONVICTION_AVG_BET else \
+                       "medium" if avg_1 > self.config.MEDIUM_CONVICTION_AVG_BET else "low"
+
+        conviction_2 = "high" if avg_2 > self.config.HIGH_CONVICTION_AVG_BET else \
+                       "medium" if avg_2 > self.config.MEDIUM_CONVICTION_AVG_BET else "low"
+
+        return {
+            "option_1_conviction": conviction_1,
+            "option_2_conviction": conviction_2,
+            "overall": "high" if "high" in [conviction_1, conviction_2] else "medium"
+        }
+
+    def _detect_sharp_bettors(self, opt1: Dict, opt2: Dict) -> Dict:
+        """
+        Détecte si des "sharp bettors" (parieurs informés) sont présents.
+
+        Signal fort: Option minoritaire avec gros bets moyens
+        → Des gens qui connaissent parient contre la foule
+        """
+        pct1 = opt1.get(OutcomeKeys.PERCENTAGE_USERS, 0)
+        pct2 = opt2.get(OutcomeKeys.PERCENTAGE_USERS, 0)
+
+        money_flow = self._detect_money_flow(opt1, opt2)
+
+        # Scénario 1: Option 1 minoritaire mais gros avg bet
+        if pct1 < self.config.SHARP_MINORITY_MAX and \
+           money_flow["avg_bet_option_1"] > money_flow["avg_bet_option_2"] * self.config.SHARP_AVG_BET_RATIO:
+            return {
+                "detected": True,
+                "sharp_choice": 1,
+                "signal_strength": "strong",
+                "reason": f"Option 1 minoritaire ({pct1:.0f}%) mais bet moyen {money_flow['avg_ratio']:.1f}x plus élevé"
+            }
+
+        # Scénario 2: Option 2 minoritaire mais gros avg bet
+        if pct2 < self.config.SHARP_MINORITY_MAX and \
+           money_flow["avg_bet_option_2"] > money_flow["avg_bet_option_1"] * self.config.SHARP_AVG_BET_RATIO:
+            return {
+                "detected": True,
+                "sharp_choice": 2,
+                "signal_strength": "strong",
+                "reason": f"Option 2 minoritaire ({pct2:.0f}%) mais bet moyen {1/money_flow['avg_ratio']:.1f}x plus élevé"
+            }
+
+        return {"detected": False}
+
+
+class CrowdWisdomStrategy:
+    """Suit l'intelligence collective des viewers."""
+
+    def __init__(self, config: CrowdWisdomConfig = None):
+        self.config = config or CrowdWisdomConfig()
+        self.analyzer = BetPatternAnalyzer(config)
+
+    def make_decision(self, outcomes: List[Dict], title: str = "") -> Optional[Dict]:
+        """
+        Décide du bet en analysant le comportement de la foule.
+
+        Args:
+            outcomes: Liste des outcomes avec leurs statistiques
+            title: Titre de la prédiction (pour logging)
+
+        Returns:
+            dict avec choice (0 ou 1), confidence, reason, amount_multiplier
+            ou None si skip
+        """
+        if len(outcomes) < 2:
+            return None
+
+        # Analyse complète des patterns
+        pattern = self.analyzer.analyze_betting_pattern(outcomes)
+
+        logger.info(f"\n=== ANALYSE: {title} ===")
+        logger.info(f"Consensus: {pattern['consensus_type']}")
+        logger.info(f"Money flow: {pattern['money_flow']}")
+        logger.info(f"Conviction: {pattern['conviction_level']}")
+        logger.info(f"Sharp signal: {pattern['sharp_signal']}")
+
+        # === STRATÉGIE 1: Sharp bettors détectés ===
+        if pattern["sharp_signal"].get("detected"):
+            sharp_choice = pattern["sharp_signal"]["sharp_choice"]
+            return {
+                "choice": sharp_choice - 1,  # Index 0 ou 1
+                "confidence": 0.85,
+                "reason": f"🎯 SHARP SIGNAL: {pattern['sharp_signal'].get('reason', '')}",
+                "amount_multiplier": 1.8  # On mise gros
+            }
+
+        # === STRATÉGIE 2: Strong consensus avec haute conviction ===
+        if pattern["consensus_type"] == "strong_consensus":
+            # Quelle option a le consensus ?
+            pct1 = outcomes[0].get(OutcomeKeys.PERCENTAGE_USERS, 0)
+            pct2 = outcomes[1].get(OutcomeKeys.PERCENTAGE_USERS, 0)
+            consensus_choice = 0 if pct1 > pct2 else 1
+            consensus_pct = max(pct1, pct2)
+
+            # Vérifie la conviction
+            conviction = pattern["conviction_level"]
+
+            if conviction["overall"] == "high":
+                return {
+                    "choice": consensus_choice,
+                    "confidence": min(consensus_pct / 100, 0.9),  # Max 90%
+                    "reason": f"💪 STRONG CONSENSUS ({consensus_pct:.0f}%) + haute conviction",
+                    "amount_multiplier": 1.5
+                }
+            elif conviction["overall"] == "medium":
+                return {
+                    "choice": consensus_choice,
+                    "confidence": 0.65,
+                    "reason": f"👥 Consensus ({consensus_pct:.0f}%) mais conviction moyenne",
+                    "amount_multiplier": 1.0
+                }
+            else:
+                # Consensus mais faible conviction = suspect
+                logger.info("⚠️ Consensus suspect (faible conviction) → SKIP")
+                return None
+
+        # === STRATÉGIE 3: Weak consensus - analyse money flow ===
+        if pattern["consensus_type"] == "weak_consensus":
+            money_flow = pattern["money_flow"]
+
+            # Si l'argent et les users vont dans le même sens → signal fort
+            pct1 = outcomes[0].get(OutcomeKeys.PERCENTAGE_USERS, 0)
+            majority_choice = 0 if pct1 > 50 else 1
+            big_money_choice = money_flow["big_money_on"] - 1
+
+            if majority_choice == big_money_choice:
+                return {
+                    "choice": majority_choice,
+                    "confidence": 0.7,
+                    "reason": f"💰 Consensus + big money alignés",
+                    "amount_multiplier": 1.3
+                }
+            else:
+                # Divergence users vs money → suit l'argent
+                avg_ratio = money_flow["avg_ratio"]
+                if avg_ratio > self.config.SIGNIFICANT_RATIO_DIFF or avg_ratio < (1 / self.config.SIGNIFICANT_RATIO_DIFF):
+                    return {
+                        "choice": big_money_choice,
+                        "confidence": 0.65,
+                        "reason": f"💵 Big money diverge de la foule (ratio {avg_ratio:.2f})",
+                        "amount_multiplier": 1.2
+                    }
+
+        # === STRATÉGIE 4: Divided - cherche des indices subtils ===
+        if pattern["consensus_type"] == "divided":
+            conviction = pattern["conviction_level"]
+
+            # Dans un 50/50, suit l'option avec plus de conviction
+            if conviction["option_1_conviction"] == "high" and conviction["option_2_conviction"] != "high":
+                return {
+                    "choice": 0,
+                    "confidence": 0.55,
+                    "reason": "🤔 50/50 mais conviction sur option 1",
+                    "amount_multiplier": 0.8
+                }
+            elif conviction["option_2_conviction"] == "high" and conviction["option_1_conviction"] != "high":
+                return {
+                    "choice": 1,
+                    "confidence": 0.55,
+                    "reason": "🤔 50/50 mais conviction sur option 2",
+                    "amount_multiplier": 0.8
+                }
+            else:
+                # Vraiment 50/50 sans signal → SKIP
+                logger.info("❌ Aucun signal clair dans un 50/50 → SKIP")
+                return None
+
+        # Aucune stratégie applicable
+        return None
+
+    def calculate_amount_from_signal(self, balance: int, decision: Dict,
+                                    base_percentage: float = 5.0) -> int:
+        """
+        Ajuste le montant selon la force du signal.
+
+        Args:
+            balance: Solde actuel de channel points
+            decision: Décision avec confidence et amount_multiplier
+            base_percentage: Pourcentage de base
+
+        Returns:
+            Montant à miser
+        """
+        confidence = decision.get("confidence", 0.5)
+        multiplier = decision.get("amount_multiplier", 1.0)
+
+        # Calcul de base
+        base_amount = balance * (base_percentage / 100)
+
+        # Ajustement selon confiance + multiplier
+        final_percentage = base_percentage * confidence * multiplier
+        final_amount = int(balance * (final_percentage / 100))
+
+        # Limites de sécurité
+        min_bet = self.config.MIN_BET
+        max_bet = min(int(balance * self.config.MAX_BANKROLL_RISK), self.config.MAX_BET)
+
+        amount = max(min_bet, min(final_amount, max_bet))
+
+        logger.info(f"💵 Montant: {amount:,} pts (conf:{confidence:.0%} × mult:{multiplier:.1f})")
+
+        return amount
+
+    def should_bet(self, outcomes: List[Dict], balance: int, title: str = "") -> Optional[Dict]:
+        """
+        Point d'entrée principal pour décider si on bet et combien.
+
+        Args:
+            outcomes: Liste des outcomes avec leurs statistiques
+            balance: Solde actuel
+            title: Titre de la prédiction
+
+        Returns:
+            dict avec choice, amount, id, reason ou None si skip
+        """
+        if len(outcomes) < 2:
+            return None
+
+        # Filtre 1: Assez de participants ?
+        total_users = sum(o.get(OutcomeKeys.TOTAL_USERS, 0) for o in outcomes)
+        if total_users < self.config.MIN_TOTAL_USERS:
+            logger.info(f"❌ Skip: seulement {total_users} users (min: {self.config.MIN_TOTAL_USERS})")
+            return None
+
+        # Filtre 2: Assez de bets par option ?
+        for i, outcome in enumerate(outcomes):
+            if outcome.get(OutcomeKeys.TOTAL_USERS, 0) < self.config.MIN_BET_SAMPLE:
+                logger.info(f"❌ Skip: pas assez de bets sur option {i+1} ({outcome.get(OutcomeKeys.TOTAL_USERS, 0)} users)")
+                return None
+
+        # Analyse et décision
+        decision = self.make_decision(outcomes, title)
+
+        if decision is None:
+            return None
+
+        # Calcul du montant
+        decision["amount"] = self.calculate_amount_from_signal(
+            balance=balance,
+            decision=decision,
+            base_percentage=self.config.BASE_PERCENTAGE
+        )
+
+        # Ajouter l'ID de l'outcome choisi
+        choice_index = decision["choice"]
+        if choice_index < len(outcomes):
+            decision["id"] = outcomes[choice_index].get("id")
+
+        return decision
+
