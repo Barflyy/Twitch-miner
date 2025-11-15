@@ -140,30 +140,105 @@ class GitHubCache:
     def _git_commit_followers(self, count: int):
         """Commit automatique des followers"""
         try:
-            # Configurer Git si nécessaire (Railway)
+            # Configurer Git si nécessaire (Fly.io)
             subprocess.run([
-                'git', 'config', '--global', 'user.email', 'railway@bot.com'
-            ], capture_output=True)
+                'git', 'config', '--global', 'user.email', 'flyio@bot.com'
+            ], capture_output=True, check=False)
             subprocess.run([
-                'git', 'config', '--global', 'user.name', 'Railway Bot'
-            ], capture_output=True)
+                'git', 'config', '--global', 'user.name', 'Fly.io Bot'
+            ], capture_output=True, check=False)
+            
+            # Configurer le remote origin si pas déjà configuré
+            try:
+                result = subprocess.run(
+                    ['git', 'remote', 'get-url', 'origin'],
+                    capture_output=True,
+                    check=False
+                )
+                if result.returncode != 0:
+                    # Remote origin n'existe pas, le créer
+                    github_repo = os.getenv('GITHUB_REPO')
+                    if github_repo:
+                        subprocess.run([
+                            'git', 'remote', 'add', 'origin', github_repo
+                        ], capture_output=True, check=False)
+                        logger.debug("📂 Remote origin configuré")
+            except:
+                pass
             
             # Add et commit
-            subprocess.run(['git', 'add', str(self.cache_file)], check=True)
+            subprocess.run(['git', 'add', str(self.cache_file)], check=True, capture_output=True)
             
             commit_msg = f"📊 Update followers cache: {count} followers ({self.username})"
             subprocess.run([
                 'git', 'commit', '-m', commit_msg
-            ], check=True)
+            ], check=True, capture_output=True)
             
             logger.info(f"📂 Auto-commit réalisé : {count} followers")
             
-            # Push si possible (optionnel, peut échouer sans casser le flow)
-            try:
-                subprocess.run(['git', 'push'], timeout=30, check=True)
-                logger.info("📂 Push GitHub réussi")
-            except:
-                logger.warning("⚠️ Push GitHub échoué (non bloquant)")
+            # Push vers GitHub avec token si disponible
+            github_token = os.getenv('GITHUB_TOKEN')
+            if github_token:
+                # Utiliser le token pour le push
+                try:
+                    # Récupérer l'URL du remote
+                    result = subprocess.run(
+                        ['git', 'remote', 'get-url', 'origin'],
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    remote_url = result.stdout.strip()
+                    
+                    # Injecter le token dans l'URL
+                    if remote_url.startswith('https://'):
+                        # Format: https://token@github.com/user/repo.git
+                        if '@' not in remote_url:
+                            # Extraire le repo de l'URL
+                            if remote_url.startswith('https://github.com/'):
+                                repo_path = remote_url.replace('https://github.com/', '')
+                                auth_url = f"https://{github_token}@github.com/{repo_path}"
+                                
+                                # Configurer temporairement l'URL avec le token
+                                subprocess.run([
+                                    'git', 'remote', 'set-url', 'origin', auth_url
+                                ], capture_output=True, check=True)
+                        
+                        # Push avec le token
+                        subprocess.run(
+                            ['git', 'push', 'origin', 'master'],
+                            timeout=30,
+                            check=True,
+                            capture_output=True
+                        )
+                        logger.info("📂 Push GitHub réussi")
+                    else:
+                        # SSH, utiliser directement
+                        subprocess.run(
+                            ['git', 'push', 'origin', 'master'],
+                            timeout=30,
+                            check=True,
+                            capture_output=True
+                        )
+                        logger.info("📂 Push GitHub réussi (SSH)")
+                        
+                except subprocess.TimeoutExpired:
+                    logger.warning("⚠️ Push GitHub timeout (non bloquant)")
+                except Exception as e:
+                    logger.warning(f"⚠️ Push GitHub échoué : {e} (non bloquant)")
+            else:
+                # Essayer sans token (peut fonctionner si déjà authentifié)
+                try:
+                    subprocess.run(
+                        ['git', 'push', 'origin', 'master'],
+                        timeout=30,
+                        check=True,
+                        capture_output=True
+                    )
+                    logger.info("📂 Push GitHub réussi (sans token)")
+                except Exception as e:
+                    logger.warning(f"⚠️ Push GitHub échoué (token manquant) : {e}")
+                    logger.info("💡 Configurez GITHUB_TOKEN pour activer le push automatique")
                 
         except Exception as e:
             logger.warning(f"⚠️ Auto-commit échoué : {e}")
