@@ -155,6 +155,7 @@ print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
 if blacklist:
     print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
 
+
 try:
     # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
     # Les streamers dans blacklist.json seront exclus
