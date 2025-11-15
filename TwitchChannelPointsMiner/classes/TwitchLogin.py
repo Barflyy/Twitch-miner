@@ -81,27 +81,17 @@ class TwitchLogin(object):
                 # Scopes de base (anciens, toujours valides)
                 "channel_read chat:read user_read "
                 "user_blocks_edit user_blocks_read user_follows_edit "
-                # Scopes utilisateur
-                "user:read:email user:read:follows user:read:subscriptions "
+                # Scopes utilisateur (essentiels)
+                "user:read:email user:read:follows "
                 # Scopes channel (essentiels pour le bot)
-                "channel:read:redemptions channel:manage:redemptions "
+                "channel:read:redemptions "
                 "channel:read:predictions channel:manage:predictions "
-                "channel:read:subscriptions "
-                "channel:moderate "
-                # Scopes chat (chat:moderate n'existe plus, utiliser channel:moderate)
+                # Scopes chat
                 "chat:edit "
                 # Scopes modération
                 "moderation:read "
                 "moderator:read:moderators "
-                # Scopes supplémentaires (optionnels mais utiles)
-                "bits:read "
-                "channel:read:goals channel:read:hype_train "
-                "channel:read:polls "
-                "channel:read:vips channel:manage:vips "
-                "whispers:read whispers:edit "
-                "clips:edit "
-                "analytics:read:extensions analytics:read:games "
-                "user:edit user:read:broadcast user:manage:broadcast"
+                "channel:moderate"
             )
         }
         # login-fix
