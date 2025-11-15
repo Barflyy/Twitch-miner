@@ -110,32 +110,13 @@ class GitHubCache:
             return False
     
     def _is_cache_valid(self, data: Dict[str, Any]) -> bool:
-        """Vérifie si le cache est valide et récent"""
-        try:
-            # Vérifier la structure
-            required_keys = ['timestamp', 'username', 'followers', 'count']
-            if not all(key in data for key in required_keys):
-                logger.warning("⚠️ Cache invalide : structure incomplète")
-                return False
-
-            # Vérifier l'utilisateur (sécurité : chaque user a son propre cache)
-            if data['username'] != self.username:
-                logger.warning(f"⚠️ Cache invalide : appartient à {data['username']}, pas {self.username}")
-                return False
-
-            # Vérifier l'âge (12h max pour refresh régulier, équilibre perf/fraîcheur)
-            cache_age = time.time() - data['timestamp']
-            max_age = 12 * 3600  # 12 heures (au lieu de 7 jours)
-
-            if cache_age >= max_age:
-                logger.info(f"⚠️ Cache expiré : {cache_age/3600:.1f}h > 12h")
-                return False
-
-            return True
-
-        except Exception as e:
-            logger.warning(f"⚠️ Erreur validation cache : {e}")
-            return False
+        """
+        ⚠️ MÉTHODE DÉPRÉCIÉE : Plus utilisée
+        Le fichier JSON est maintenant toujours utilisé s'il existe (même expiré)
+        """
+        # Cette méthode n'est plus utilisée, mais conservée pour compatibilité
+        # La validation est maintenant faite directement dans load_followers()
+        return True
     
     def _should_auto_commit(self) -> bool:
         """Vérifie si on doit faire un auto-commit"""
