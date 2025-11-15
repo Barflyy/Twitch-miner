@@ -35,10 +35,16 @@ def run_discord_bot():
         )
         
         # Afficher les logs en temps réel
-        for line in process.stdout:
-            print(f"[BOT] {line.rstrip()}")
+        try:
+            for line in process.stdout:
+                if line:
+                    print(f"[BOT] {line.rstrip()}", flush=True)
+        except Exception as e:
+            print(f"[BOT] Erreur lecture stdout: {e}", flush=True)
         
         process.wait()
+        if process.returncode != 0:
+            print(f"[BOT] Processus terminé avec code {process.returncode}", flush=True)
         
     except KeyboardInterrupt:
         print("🛑 Bot Discord arrêté")
@@ -63,10 +69,16 @@ def run_miner():
         )
         
         # Afficher les logs en temps réel
-        for line in process.stdout:
-            print(f"[MINER] {line.rstrip()}")
+        try:
+            for line in process.stdout:
+                if line:
+                    print(f"[MINER] {line.rstrip()}", flush=True)
+        except Exception as e:
+            print(f"[MINER] Erreur lecture stdout: {e}", flush=True)
         
         process.wait()
+        if process.returncode != 0:
+            print(f"[MINER] Processus terminé avec code {process.returncode}", flush=True)
         
     except KeyboardInterrupt:
         print("🛑 Miner arrêté")
@@ -76,9 +88,15 @@ def run_miner():
         traceback.print_exc()
 
 def main():
-    # Forcer unbuffered pour Railway
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
+    # Forcer unbuffered pour Railway/Fly.io
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except (AttributeError, OSError):
+        # Fallback pour Python < 3.7 ou environnements sans reconfigure
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
     
     print("=" * 50, flush=True)
     print("🚀 LAUNCHER - Twitch Miner + Bot Discord", flush=True)
@@ -112,8 +130,8 @@ def main():
     print(flush=True)
     
     # Lancer les deux processus en parallèle
-    discord_thread = Thread(target=run_discord_bot, daemon=True, name="Discord-Bot")
-    miner_thread = Thread(target=run_miner, daemon=True, name="Twitch-Miner")
+    discord_thread = Thread(target=run_discord_bot, daemon=False, name="Discord-Bot")
+    miner_thread = Thread(target=run_miner, daemon=False, name="Twitch-Miner")
     
     discord_thread.start()
     miner_thread.start()
@@ -124,9 +142,11 @@ def main():
     print(flush=True)
     
     # Attendre que les threads se terminent
+    # Utiliser un timeout pour éviter de bloquer indéfiniment
     try:
-        discord_thread.join()
-        miner_thread.join()
+        while discord_thread.is_alive() or miner_thread.is_alive():
+            discord_thread.join(timeout=1)
+            miner_thread.join(timeout=1)
     except KeyboardInterrupt:
         print("\n🛑 Arrêt demandé...", flush=True)
         sys.exit(0)
