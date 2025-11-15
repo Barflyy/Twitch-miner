@@ -28,31 +28,39 @@ class GitHubCache:
         logger.debug(f"📂 Fichier existe : {self.cache_file.exists()}")
         
     def load_followers(self) -> List[str]:
-        """Charge les followers depuis le fichier Git"""
+        """Charge les followers depuis le fichier Git (toujours utilisé s'il existe, même expiré)"""
         try:
             if self.cache_file.exists():
                 logger.debug(f"📂 Fichier trouvé : {self.cache_file}")
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
-                # Vérifier la validité
-                if self._is_cache_valid(data):
+                # Vérifier la structure de base (username, followers)
+                if 'followers' in data and isinstance(data['followers'], list):
+                    # Vérifier l'utilisateur (sécurité)
+                    if data.get('username') != self.username:
+                        logger.warning(f"⚠️ Cache invalide : appartient à {data.get('username')}, pas {self.username}")
+                        return []
+                    
                     followers = data.get('followers', [])
-                    hours_old = (time.time() - data['timestamp']) / 3600
-                    logger.info(
-                        f"📂 Cache GitHub chargé : {len(followers)} followers (mis à jour il y a {hours_old:.1f}h)",
-                        extra={"emoji": ":file_folder:"}
-                    )
-                    return followers
+                    if len(followers) > 0:
+                        # Toujours utiliser le fichier s'il existe et contient des followers
+                        # Même s'il est "expiré" selon le TTL, on l'utilise quand même
+                        hours_old = (time.time() - data.get('timestamp', 0)) / 3600
+                        logger.info(
+                            f"📂 Fichier JSON chargé : {len(followers)} followers (mis à jour il y a {hours_old:.1f}h)",
+                            extra={"emoji": ":file_folder:"}
+                        )
+                        return followers
+                    else:
+                        logger.warning("⚠️ Fichier JSON vide (pas de followers)")
                 else:
-                    # Log plus détaillé pour comprendre pourquoi le cache est invalide
-                    cache_age = time.time() - data.get('timestamp', 0)
-                    logger.warning(f"⚠️ Cache GitHub invalide ou expiré (âge: {cache_age/3600:.1f}h)")
+                    logger.warning("⚠️ Structure du fichier JSON invalide")
             else:
                 logger.warning(f"⚠️ Fichier JSON introuvable : {self.cache_file.absolute()}")
-                logger.info("📂 Aucun cache GitHub trouvé, première synchronisation...")
+                logger.info("📂 Aucun fichier JSON trouvé, utilisation de l'API Helix...")
         except Exception as e:
-            logger.error(f"❌ Erreur lecture cache GitHub : {e}", exc_info=True)
+            logger.error(f"❌ Erreur lecture fichier JSON : {e}", exc_info=True)
         
         return []
     
