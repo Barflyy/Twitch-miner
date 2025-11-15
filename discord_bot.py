@@ -882,9 +882,20 @@ async def create_or_update_pinned_list(guild):
         return
     
     try:
+        # Essayer de récupérer le canal
         list_channel = bot.get_channel(CHANNEL_ID)
+        
+        # Si pas trouvé, essayer de le chercher dans le guild
+        if not list_channel:
+            # Chercher dans tous les canaux du guild
+            for channel in guild.text_channels:
+                if channel.id == CHANNEL_ID:
+                    list_channel = channel
+                    break
+        
         if not list_channel:
             print(f"❌ Canal {CHANNEL_ID} introuvable pour le message épinglé")
+            print(f"💡 Vérifiez que DISCORD_CHANNEL_ID={CHANNEL_ID} est correct")
             return
         
         # Charger les données
@@ -1064,8 +1075,8 @@ async def update_channels():
                 if channel:
                     guild = channel.guild
                     
-                    # Nettoyer les anciens salons au premier démarrage
-                    if not pinned_list_message_id:
+                    # Nettoyer les anciens salons au premier démarrage (une seule fois)
+                    if not pinned_list_message_id and CATEGORY_ID and CATEGORY_ID != 0:
                         print("🧹 Nettoyage des anciens salons individuels...")
                         await cleanup_old_channels(guild)
                     
