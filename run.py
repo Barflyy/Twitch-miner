@@ -289,6 +289,8 @@ try:
         update_thread.start()
         
         # Miner avec le fichier JSON (sans attendre la mise à jour)
+        print(f"🚀 Démarrage du mining avec {len(streamers_filtered)} streamer(s) depuis le fichier JSON")
+        print(f"📋 Premiers streamers : {', '.join(streamers_filtered[:5])}{'...' if len(streamers_filtered) > 5 else ''}")
         twitch_miner.mine(
             streamers=streamers_filtered,  # Liste depuis le fichier JSON
             blacklist=blacklist,  # Streamers à exclure

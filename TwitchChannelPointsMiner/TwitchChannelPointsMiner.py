@@ -236,6 +236,7 @@ class TwitchChannelPointsMiner:
             streamers_name: list = []
             streamers_dict: dict = {}
 
+            logger.info(f"📋 Streamers passés au miner : {len(streamers)}")
             for streamer in streamers:
                 username = (
                     streamer.username
@@ -245,6 +246,8 @@ class TwitchChannelPointsMiner:
                 if username not in blacklist:
                     streamers_name.append(username)
                     streamers_dict[username] = streamer
+
+            logger.info(f"📋 Streamers après filtrage blacklist : {len(streamers_name)}")
 
             if followers is True:
                 # Passer la blacklist pour filtrer lors du chargement du cache
