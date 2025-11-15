@@ -385,6 +385,55 @@ class TwitchChannelPointsMiner:
             
             points_time = time.time() - start_time
             logger.info(f"✅ {points_loaded} channel points chargés en {points_time:.1f}s")
+            
+            # 🔄 Mettre à jour bot_data.json avec les points chargés pour que le bot Discord actualise les fiches
+            try:
+                import json
+                from pathlib import Path
+                data_file = Path("bot_data.json")
+                
+                # Charger les données existantes
+                if data_file.exists():
+                    with open(data_file, 'r') as f:
+                        data = json.load(f)
+                else:
+                    data = {'streamers': {}}
+                
+                # Mettre à jour les points de tous les streamers
+                updated_count = 0
+                for streamer in self.streamers:
+                    streamer_name = streamer.username.lower()
+                    if streamer_name not in data['streamers']:
+                        data['streamers'][streamer_name] = {
+                            'online': streamer.is_online,
+                            'balance': streamer.channel_points,
+                            'starting_balance': streamer.channel_points,
+                            'total_earned': 0,
+                            'session_points': 0,
+                            'watch_points': 0,
+                            'bonus_points': 0,
+                            'bets_placed': 0,
+                            'bets_won': 0,
+                            'bets_lost': 0
+                        }
+                        updated_count += 1
+                    else:
+                        # Mettre à jour le solde et le statut
+                        old_balance = data['streamers'][streamer_name].get('balance', 0)
+                        data['streamers'][streamer_name]['balance'] = streamer.channel_points
+                        data['streamers'][streamer_name]['online'] = streamer.is_online
+                        
+                        # Si le solde a changé et qu'on n'a pas encore de starting_balance, l'initialiser
+                        if 'starting_balance' not in data['streamers'][streamer_name] or data['streamers'][streamer_name]['starting_balance'] == 0:
+                            data['streamers'][streamer_name]['starting_balance'] = streamer.channel_points
+                
+                # Sauvegarder
+                with open(data_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                logger.info(f"📊 bot_data.json mis à jour : {updated_count} nouveaux streamers, {len(self.streamers)} total")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur mise à jour bot_data.json : {e}")
 
             self.original_streamers = [
                 streamer.channel_points for streamer in self.streamers

@@ -994,6 +994,63 @@ async def create_or_update_pinned_list(guild):
         import traceback
         traceback.print_exc()
 
+async def cleanup_old_channels(guild):
+    """🧹 Supprime les anciens salons individuels et catégories inutiles"""
+    global streamer_channels, streamer_messages, category_channels
+    
+    if not CATEGORY_ID or CATEGORY_ID == 0:
+        return
+    
+    try:
+        base_category = bot.get_channel(CATEGORY_ID)
+        if not base_category or not isinstance(base_category, discord.CategoryChannel):
+            return
+        
+        deleted_channels = 0
+        deleted_categories = 0
+        
+        # Supprimer tous les salons de streamers individuels
+        for category in guild.categories:
+            if category.name.startswith(base_category.name) or category == base_category:
+                for channel in category.text_channels:
+                    if isinstance(channel, discord.TextChannel):
+                        # Vérifier si c'est un salon de streamer (format: 🟢-nom ou 🔴-nom)
+                        if channel.name.startswith("🟢-") or channel.name.startswith("🔴-"):
+                            try:
+                                await channel.delete()
+                                deleted_channels += 1
+                                if deleted_channels % 5 == 0:
+                                    await asyncio.sleep(1)  # Rate limiting
+                            except Exception as e:
+                                print(f"⚠️ Erreur suppression salon {channel.name}: {e}")
+        
+        # Supprimer les catégories vides (sauf la catégorie de base)
+        for category in guild.categories:
+            if category.name.startswith(base_category.name) and category != base_category:
+                # Vérifier si la catégorie est vide
+                text_channels = [ch for ch in category.channels if isinstance(ch, discord.TextChannel)]
+                if len(text_channels) == 0:
+                    try:
+                        await category.delete()
+                        deleted_categories += 1
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"⚠️ Erreur suppression catégorie {category.name}: {e}")
+        
+        # Nettoyer les références
+        streamer_channels.clear()
+        streamer_messages.clear()
+        category_channels.clear()
+        save_channels()
+        
+        if deleted_channels > 0 or deleted_categories > 0:
+            print(f"🧹 Nettoyage terminé : {deleted_channels} salon(s) et {deleted_categories} catégorie(s) supprimé(s)")
+    
+    except Exception as e:
+        print(f"❌ Erreur nettoyage salons : {e}")
+        import traceback
+        traceback.print_exc()
+
 @tasks.loop(seconds=30)
 async def update_channels():
     """Met à jour les salons streamers selon leur statut"""
@@ -1006,6 +1063,12 @@ async def update_channels():
                 channel = bot.get_channel(CHANNEL_ID)
                 if channel:
                     guild = channel.guild
+                    
+                    # Nettoyer les anciens salons au premier démarrage
+                    if not pinned_list_message_id:
+                        print("🧹 Nettoyage des anciens salons individuels...")
+                        await cleanup_old_channels(guild)
+                    
                     await create_or_update_pinned_list(guild)
                     return  # Ne pas créer de salons individuels
                 else:
