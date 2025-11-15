@@ -247,6 +247,58 @@ class Twitch(object):
             raise StreamerDoesNotExistException
         else:
             return json_response["data"]["user"]["id"]
+    
+    def _get_channel_ids_batch(self, streamer_usernames: list) -> dict:
+        """
+        🚀 Récupère les channel IDs en batch via l'API Helix (beaucoup plus rapide)
+        
+        Args:
+            streamer_usernames: Liste des usernames à convertir en IDs
+        
+        Returns:
+            dict: {username: channel_id} pour tous les streamers trouvés
+        """
+        try:
+            # Utiliser le token OAuth User déjà authentifié
+            user_token = self.twitch_login.get_auth_token()
+            if not user_token:
+                logger.warning("⚠️ Pas de token OAuth pour récupérer les channel IDs en batch")
+                return {}
+            
+            headers = {
+                "Client-ID": CLIENT_ID,
+                "Authorization": f"Bearer {user_token}"
+            }
+            
+            username_to_id = {}
+            
+            # Diviser en chunks de 100 (limite API Helix)
+            chunks = create_chunks(streamer_usernames, 100)
+            
+            for chunk in chunks:
+                # Construire la requête avec plusieurs usernames
+                usernames_param = "&".join([f"login={username}" for username in chunk])
+                users_url = f"https://api.twitch.tv/helix/users?{usernames_param}"
+                
+                try:
+                    users_response = requests.get(users_url, headers=headers, timeout=10)
+                    users_response.raise_for_status()
+                    users_data = users_response.json()
+                    
+                    for user in users_data.get("data", []):
+                        user_id = user.get("id")
+                        username = user.get("login", "").lower()
+                        if user_id and username:
+                            username_to_id[username] = user_id
+                except Exception as e:
+                    logger.debug(f"⚠️ Erreur récupération IDs pour chunk: {e}")
+                    continue
+            
+            return username_to_id
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur récupération channel IDs en batch : {e}")
+            return {}
 
     def _get_followers_via_helix_api(self):
         """
