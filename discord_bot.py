@@ -688,24 +688,32 @@ async def update_stats_channels(guild):
 
 @bot.event
 async def on_ready():
-    global bot_start_time
+    global bot_start_time, pinned_list_channel_id, pinned_list_message_id
     bot_start_time = datetime.utcnow()
     
     print(f'✅ Bot connecté: {bot.user.name}')
     print(f'📋 ID: {bot.user.id}')
     
-    # Vérifier qu'on a une catégorie définie
-    if not CATEGORY_ID or CATEGORY_ID == 0:
-        print("[BOT] ⚠️ DISCORD_CATEGORY_ID non défini !")
-        print("[BOT] Le bot fonctionne sans salons automatiques")
-        print("[BOT] Ajoutez DISCORD_CATEGORY_ID pour activer le système de salons streamers")
-        print("[BOT] Pour l'instant, utilisez les commandes !status, !add, !list, etc.")
-        # Ne pas bloquer le démarrage, le bot reste fonctionnel pour les commandes
-        return
-    
     # Charger les données
     load_channels()
     load_data(force=True)  # Force le chargement au démarrage
+    
+    # 🆕 NOUVEAU SYSTÈME : Nettoyer et recréer le canal du message épinglé au démarrage
+    if USE_PINNED_MESSAGE:
+        for guild in bot.guilds:
+            print("🧹 Nettoyage et recréation du canal message épinglé...")
+            await cleanup_pinned_channel(guild)
+            break  # Prendre le premier guild
+    
+    # Vérifier qu'on a une catégorie définie (pour l'ancien système de fallback)
+    if not CATEGORY_ID or CATEGORY_ID == 0:
+        if not USE_PINNED_MESSAGE:
+            print("[BOT] ⚠️ DISCORD_CATEGORY_ID non défini !")
+            print("[BOT] Le bot fonctionne sans salons automatiques")
+            print("[BOT] Ajoutez DISCORD_CATEGORY_ID pour activer le système de salons streamers")
+            print("[BOT] Pour l'instant, utilisez les commandes !status, !add, !list, etc.")
+            # Ne pas bloquer le démarrage, le bot reste fonctionnel pour les commandes
+            return
     
     # Initialiser le cache avec les données actuelles
     global streamer_data_cache
@@ -872,30 +880,115 @@ def has_data_changed(streamer, new_data):
     
     return False
 
+async def create_or_get_pinned_channel(guild):
+    """🆕 Crée ou récupère la catégorie et le canal pour le message épinglé"""
+    global pinned_list_channel_id
+    
+    try:
+        # Nom de la catégorie et du canal
+        category_name = "📺 TWITCH MINER - LISTE"
+        channel_name = "📋-liste-streamers"
+        
+        # Chercher si la catégorie existe déjà
+        category = None
+        for cat in guild.categories:
+            if cat.name == category_name:
+                category = cat
+                break
+        
+        # Si pas trouvée, créer la catégorie
+        if not category:
+            print(f"📁 Création de la catégorie : {category_name}")
+            category = await guild.create_category(category_name)
+        
+        # Chercher si le canal existe déjà
+        list_channel = None
+        for channel in category.text_channels:
+            if channel.name == channel_name:
+                list_channel = channel
+                break
+        
+        # Si pas trouvé, créer le canal (en lecture seule pour @everyone)
+        if not list_channel:
+            print(f"📝 Création du canal : {channel_name}")
+            # Permissions : @everyone ne peut pas écrire, seulement lire
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(
+                    read_messages=True,
+                    send_messages=False,
+                    add_reactions=False
+                )
+            }
+            list_channel = await category.create_text_channel(
+                channel_name,
+                overwrites=overwrites
+            )
+            pinned_list_channel_id = list_channel.id
+            save_channels()
+        else:
+            pinned_list_channel_id = list_channel.id
+        
+        return list_channel
+    
+    except Exception as e:
+        print(f"❌ Erreur création catégorie/canal : {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+async def cleanup_pinned_channel(guild):
+    """🧹 Supprime la catégorie et le canal du message épinglé pour recréer proprement"""
+    global pinned_list_channel_id, pinned_list_message_id
+    
+    try:
+        category_name = "📺 TWITCH MINER - LISTE"
+        channel_name = "📋-liste-streamers"
+        
+        # Supprimer le canal s'il existe
+        if pinned_list_channel_id:
+            channel = guild.get_channel(pinned_list_channel_id)
+            if channel:
+                try:
+                    await channel.delete()
+                    print(f"🗑️ Canal {channel_name} supprimé")
+                except:
+                    pass
+        
+        # Chercher et supprimer la catégorie
+        for category in guild.categories:
+            if category.name == category_name:
+                try:
+                    # Supprimer tous les canaux de la catégorie d'abord
+                    for ch in category.channels:
+                        try:
+                            await ch.delete()
+                        except:
+                            pass
+                    # Supprimer la catégorie
+                    await category.delete()
+                    print(f"🗑️ Catégorie {category_name} supprimée")
+                except:
+                    pass
+                break
+        
+        # Réinitialiser les IDs
+        pinned_list_channel_id = None
+        pinned_list_message_id = None
+        save_channels()
+    
+    except Exception as e:
+        print(f"⚠️ Erreur nettoyage canal épinglé : {e}")
+
 async def create_or_update_pinned_list(guild):
     """🆕 Crée ou met à jour le message épinglé unique qui liste tous les streamers"""
     global pinned_list_channel_id, pinned_list_message_id
     
-    # Utiliser le canal de commandes (CHANNEL_ID) pour le message épinglé
-    if not CHANNEL_ID or CHANNEL_ID == 0:
-        print("⚠️ CHANNEL_ID non défini, impossible de créer message épinglé")
-        return
-    
     try:
-        # Essayer de récupérer le canal
-        list_channel = bot.get_channel(CHANNEL_ID)
-        
-        # Si pas trouvé, essayer de le chercher dans le guild
-        if not list_channel:
-            # Chercher dans tous les canaux du guild
-            for channel in guild.text_channels:
-                if channel.id == CHANNEL_ID:
-                    list_channel = channel
-                    break
+        # Créer ou récupérer le canal (le bot le crée automatiquement)
+        list_channel = await create_or_get_pinned_channel(guild)
         
         if not list_channel:
-            print(f"❌ Canal {CHANNEL_ID} introuvable pour le message épinglé")
-            print(f"💡 Vérifiez que DISCORD_CHANNEL_ID={CHANNEL_ID} est correct")
+            print("❌ Impossible de créer/récupérer le canal pour le message épinglé")
             return
         
         # Charger les données
@@ -915,12 +1008,93 @@ async def create_or_update_pinned_list(guild):
         online_count = sum(1 for _, d in sorted_streamers if d.get('online', False))
         offline_count = len(sorted_streamers) - online_count
         
+        # Calculer les statistiques globales
+        total_streamers = len(sorted_streamers)
+        
+        # Calculer le temps d'activité du bot
+        uptime_text = "N/A"
+        if bot_start_time:
+            uptime = datetime.utcnow() - bot_start_time
+            days = int(uptime.total_seconds() // 86400)
+            hours = int((uptime.total_seconds() % 86400) // 3600)
+            minutes = int((uptime.total_seconds() % 3600) // 60)
+            
+            if days > 0:
+                uptime_text = f"{days}j {hours}h {minutes}m"
+            elif hours > 0:
+                uptime_text = f"{hours}h {minutes}m"
+            else:
+                uptime_text = f"{minutes}m"
+        
+        # Calculer les totaux de points
+        total_balance = sum(s.get('balance', 0) for s in streamer_data.values())
+        total_session_points = sum(s.get('session_points', 0) for s in streamer_data.values())
+        
+        # Nombre de salons Discord créés (ancien système)
+        total_channels = len(streamer_channels)
+        
+        # Nombre de catégories
+        categories_count = 0
+        if CATEGORY_ID:
+            try:
+                category = bot.get_channel(CATEGORY_ID)
+                if category:
+                    categories_count = len([c for c in category.guild.categories if c.name.startswith(category.name)])
+            except:
+                pass
+        
         # Créer le contenu du message avec embed Discord (plus joli et plus d'espace)
         embed = discord.Embed(
-            title="📺 LISTE DES STREAMERS",
-            description=f"🟢 **{online_count}** en ligne | 🔴 **{offline_count}** hors ligne | 📋 **{len(sorted_streamers)}** total",
+            title="📊 Statistiques Globales - Twitch Miner",
+            description="Statistiques en temps réel du bot de mining",
             color=0x5865F2,
             timestamp=datetime.utcnow()
+        )
+        
+        # 📊 STATISTIQUES GLOBALES
+        # Statut des streams
+        embed.add_field(
+            name="📺 Streams",
+            value=f"🟢 **{online_count}** en ligne\n🔴 **{offline_count}** hors ligne\n📋 **{total_streamers}** total",
+            inline=True
+        )
+        
+        # Followers Totaux
+        embed.add_field(
+            name="👥 Followers Totaux",
+            value=f"📁 **{total_streamers}** streamers suivis\n💬 Salons Discord créés\n🔄 Mise à jour: 30s",
+            inline=True
+        )
+        
+        # Temps d'activité
+        embed.add_field(
+            name="⏱️ Temps d'activité",
+            value=f"🟢 **{uptime_text}**",
+            inline=True
+        )
+        
+        # Points totaux
+        balance_display = f"{total_balance:,.0f}".replace(',', ' ')
+        session_display = f"{total_session_points:,.0f}".replace(',', ' ')
+        embed.add_field(
+            name="💎 Points Totaux",
+            value=f"💰 Solde: **{balance_display}**\n📈 Session: **+{session_display}**",
+            inline=True
+        )
+        
+        # Catégories
+        if categories_count > 0:
+            embed.add_field(
+                name="📁 Catégories",
+                value=f"📂 **{categories_count}** catégorie(s)\n📊 Max: 50 canaux/catégorie",
+                inline=True
+            )
+        
+        # Séparateur visuel pour la liste des streamers
+        embed.add_field(
+            name="\u200b",  # Caractère invisible pour séparateur
+            value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 **LISTE DES STREAMERS**",
+            inline=False
         )
         
         # Streamers en ligne (limiter à 25 pour éviter embed trop long)
@@ -975,7 +1149,7 @@ async def create_or_update_pinned_list(guild):
                 inline=False
             )
         
-        embed.set_footer(text="💡 Utilisez !status <streamer> pour les détails • Mise à jour auto toutes les 30s")
+        embed.set_footer(text="Twitch Channel Points Miner • Statistiques globales • Mise à jour auto toutes les 30s")
         
         # Créer ou mettre à jour le message
         if pinned_list_message_id:
