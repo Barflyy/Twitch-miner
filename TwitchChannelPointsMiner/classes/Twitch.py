@@ -13,7 +13,6 @@ import string
 import time
 import requests
 import validators
-import json
 
 from pathlib import Path
 from secrets import choice, token_hex
@@ -336,6 +335,215 @@ class Twitch(object):
             logger.error(f"❌ Erreur inattendue API Helix: {e}")
             logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
             return None
+
+    def get_followed_streams_online(self, streamer_usernames: list = None):
+        """
+        🚀 Récupère les streams en ligne des follows via l'API Twitch Helix
+        
+        Cette méthode est beaucoup plus efficace que de vérifier chaque streamer individuellement.
+        Elle récupère tous les streams en ligne d'un coup via l'API Helix.
+        
+        Args:
+            streamer_usernames: Liste optionnelle des usernames à vérifier.
+                              Si None, récupère tous les streams en ligne des follows.
+        
+        Returns:
+            dict: {
+                'online': set of usernames en ligne,
+                'offline': set of usernames hors ligne,
+                'streams_data': dict avec infos détaillées des streams
+            }
+        """
+        try:
+            # 1. Utiliser le token OAuth User déjà authentifié
+            user_token = self.twitch_login.get_auth_token()
+            if not user_token:
+                logger.warning("⚠️ Pas de token OAuth pour récupérer les streams en ligne")
+                return None
+
+            # 2. Headers pour les requêtes API Helix
+            headers = {
+                "Client-ID": CLIENT_ID,
+                "Authorization": f"Bearer {user_token}"
+            }
+
+            # 3. Si aucune liste fournie, récupérer tous les follows d'abord
+            if streamer_usernames is None:
+                # Récupérer tous les follows
+                all_follows = self._get_followers_via_helix_api()
+                if not all_follows:
+                    logger.warning("⚠️ Impossible de récupérer la liste des follows")
+                    return None
+                streamer_usernames = all_follows
+
+            # 4. Récupérer les IDs des streamers (nécessaire pour l'API /streams)
+            # L'API /streams nécessite des user_id, pas des usernames
+            # On va utiliser l'API /users pour convertir usernames -> user_ids
+            user_ids = []
+            username_to_id = {}
+            
+            # Diviser en chunks de 100 (limite API Helix)
+            chunks = create_chunks(streamer_usernames, 100)
+            
+            for chunk in chunks:
+                # Construire la requête avec plusieurs usernames
+                usernames_param = "&".join([f"login={username}" for username in chunk])
+                users_url = f"https://api.twitch.tv/helix/users?{usernames_param}"
+                
+                try:
+                    users_response = requests.get(users_url, headers=headers, timeout=10)
+                    users_response.raise_for_status()
+                    users_data = users_response.json()
+                    
+                    for user in users_data.get("data", []):
+                        user_id = user.get("id")
+                        username = user.get("login", "").lower()
+                        if user_id and username:
+                            user_ids.append(user_id)
+                            username_to_id[username] = user_id
+                except Exception as e:
+                    logger.debug(f"⚠️ Erreur récupération IDs pour chunk: {e}")
+                    continue
+
+            if not user_ids:
+                logger.warning("⚠️ Aucun ID utilisateur récupéré")
+                return None
+
+            # 5. Récupérer les streams en ligne (API /streams)
+            # Diviser en chunks de 100 (limite API Helix)
+            online_streams = {}
+            all_checked_usernames = set()
+            
+            user_id_chunks = create_chunks(user_ids, 100)
+            for chunk in user_id_chunks:
+                user_ids_param = "&".join([f"user_id={uid}" for uid in chunk])
+                streams_url = f"https://api.twitch.tv/helix/streams?{user_ids_param}&first=100"
+                
+                try:
+                    streams_response = requests.get(streams_url, headers=headers, timeout=10)
+                    streams_response.raise_for_status()
+                    streams_data = streams_response.json()
+                    
+                    for stream in streams_data.get("data", []):
+                        user_id = stream.get("user_id")
+                        username = stream.get("user_login", "").lower()
+                        if user_id and username:
+                            online_streams[username] = {
+                                "user_id": user_id,
+                                "game_name": stream.get("game_name", ""),
+                                "title": stream.get("title", ""),
+                                "viewer_count": stream.get("viewer_count", 0),
+                                "started_at": stream.get("started_at", ""),
+                            }
+                            all_checked_usernames.add(username)
+                except Exception as e:
+                    logger.debug(f"⚠️ Erreur récupération streams pour chunk: {e}")
+                    continue
+
+            # 6. Construire le résultat
+            online_usernames = set(online_streams.keys())
+            all_usernames_lower = {u.lower() for u in streamer_usernames}
+            offline_usernames = all_usernames_lower - online_usernames
+
+            logger.debug(
+                f"📊 Streams suivis: {len(online_usernames)} en ligne, {len(offline_usernames)} hors ligne"
+            )
+
+            return {
+                "online": online_usernames,
+                "offline": offline_usernames,
+                "streams_data": online_streams
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Erreur API Twitch Helix (streams): {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Erreur inattendue récupération streams: {e}")
+            return None
+
+    def monitor_followed_streams(self, streamers, check_interval=60):
+        """
+        🔄 Surveille automatiquement les streams suivis et met à jour leur statut
+        
+        Cette méthode utilise l'API Helix pour détecter rapidement les changements
+        d'état (en ligne/hors ligne) et met à jour les objets Streamer automatiquement.
+        
+        Args:
+            streamers: Liste des objets Streamer à surveiller
+            check_interval: Intervalle de vérification en secondes (défaut: 60)
+        """
+        while self.running:
+            try:
+                # Récupérer tous les usernames des streamers suivis
+                streamer_usernames = [s.username for s in streamers]
+                
+                if not streamer_usernames:
+                    time.sleep(check_interval)
+                    continue
+
+                # Récupérer les streams en ligne via l'API Helix
+                streams_status = self.get_followed_streams_online(streamer_usernames)
+                
+                if not streams_status:
+                    # Si l'API échoue, utiliser la méthode individuelle classique
+                    logger.debug("⚠️ API Helix échouée, fallback sur vérification individuelle")
+                    for streamer in streamers:
+                        if time.time() >= streamer.offline_at + 60:
+                            self.check_streamer_online(streamer)
+                    time.sleep(check_interval)
+                    continue
+
+                online_usernames = streams_status["online"]
+                offline_usernames = streams_status["offline"]
+                streams_data = streams_status.get("streams_data", {})
+
+                # Mettre à jour chaque streamer selon son statut
+                for streamer in streamers:
+                    username_lower = streamer.username.lower()
+                    
+                    if username_lower in online_usernames:
+                        # Streamer est en ligne selon l'API
+                        if not streamer.is_online:
+                            # Il vient de passer en ligne !
+                            logger.info(
+                                f"🟢 {streamer.username} vient de passer EN LIGNE (détecté via API Helix)",
+                                extra={"emoji": ":green_circle:", "event": Events.STREAMER_ONLINE}
+                            )
+                            try:
+                                # Mettre à jour les infos du stream
+                                self.get_spade_url(streamer)
+                                self.update_stream(streamer)
+                                streamer.set_online()
+                            except Exception as e:
+                                logger.debug(f"⚠️ Erreur mise à jour stream {streamer.username}: {e}")
+                        else:
+                            # Déjà en ligne, juste mettre à jour les infos
+                            try:
+                                self.update_stream(streamer)
+                            except StreamerIsOfflineException:
+                                # Le stream vient de s'arrêter entre temps
+                                streamer.set_offline()
+                            except Exception as e:
+                                logger.debug(f"⚠️ Erreur update stream {streamer.username}: {e}")
+                    
+                    elif username_lower in offline_usernames:
+                        # Streamer est hors ligne selon l'API
+                        if streamer.is_online:
+                            # Il vient de passer hors ligne !
+                            logger.info(
+                                f"🔴 {streamer.username} vient de passer HORS LIGNE (détecté via API Helix)",
+                                extra={"emoji": ":red_circle:", "event": Events.STREAMER_OFFLINE}
+                            )
+                            streamer.set_offline()
+                        # Sinon, déjà hors ligne, rien à faire
+
+                # Attendre avant la prochaine vérification
+                time.sleep(check_interval)
+
+            except Exception as e:
+                logger.error(f"❌ Erreur dans monitor_followed_streams: {e}", exc_info=True)
+                time.sleep(check_interval)
 
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []

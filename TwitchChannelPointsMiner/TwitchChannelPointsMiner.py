@@ -62,6 +62,7 @@ class TwitchChannelPointsMiner:
         "events_predictions",
         "minute_watcher_thread",
         "sync_campaigns_thread",
+        "stream_monitor_thread",
         "ws_pool",
         "session_id",
         "running",
@@ -146,6 +147,7 @@ class TwitchChannelPointsMiner:
         self.events_predictions = {}
         self.minute_watcher_thread = None
         self.sync_campaigns_thread = None
+        self.stream_monitor_thread = None
         self.ws_pool = None
 
         self.session_id = str(uuid.uuid4())
@@ -335,6 +337,21 @@ class TwitchChannelPointsMiner:
             self.minute_watcher_thread.name = "Minute watcher"
             self.minute_watcher_thread.start()
 
+            # 🚀 Surveillance automatique des streams suivis via API Helix
+            # Détecte rapidement les changements d'état (en ligne/hors ligne)
+            if followers is True:
+                self.stream_monitor_thread = threading.Thread(
+                    target=self.twitch.monitor_followed_streams,
+                    args=(self.streamers,),
+                    kwargs={"check_interval": 60}  # Vérifie toutes les 60 secondes
+                )
+                self.stream_monitor_thread.name = "Stream monitor (API Helix)"
+                self.stream_monitor_thread.start()
+                logger.info(
+                    "🔄 Surveillance automatique des streams activée (API Helix, toutes les 60s)",
+                    extra={"emoji": ":satellite:"}
+                )
+
             self.ws_pool = WebSocketsPool(
                 twitch=self.twitch,
                 streamers=self.streamers,
@@ -437,6 +454,9 @@ class TwitchChannelPointsMiner:
 
         if self.sync_campaigns_thread is not None:
             self.sync_campaigns_thread.join()
+
+        if self.stream_monitor_thread is not None:
+            self.stream_monitor_thread.join()
 
         # Check if all the mutex are unlocked.
         # Prevent breaks of .json file

@@ -6,7 +6,7 @@ from discord.ext import commands, tasks
 import json
 import os
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import aiohttp
 
