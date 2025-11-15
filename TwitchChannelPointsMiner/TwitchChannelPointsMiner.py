@@ -265,18 +265,34 @@ class TwitchChannelPointsMiner:
                 f"Loading data for {len(streamers_name)} streamers. Please wait...",
                 extra={"emoji": ":nerd_face:"},
             )
+            
+            # 🚀 OPTIMISATION : Charger tous les channel IDs en batch via API Helix
+            logger.info("⚡ Chargement des channel IDs en batch via API Helix...")
+            start_time = time.time()
+            channel_ids_map = self.twitch._get_channel_ids_batch(streamers_name)
+            batch_time = time.time() - start_time
+            logger.info(f"✅ {len(channel_ids_map)} channel IDs chargés en {batch_time:.1f}s (batch)")
+            
             loaded_count = 0
             failed_count = 0
+            start_time = time.time()
             for username in streamers_name:
                 if username in streamers_name:
-                    time.sleep(random.uniform(0.3, 0.7))
                     try:
                         streamer = (
                             streamers_dict[username]
                             if isinstance(streamers_dict[username], Streamer) is True
                             else Streamer(username)
                         )
-                        streamer.channel_id = self.twitch.get_channel_id(username)
+                        
+                        # Utiliser le channel ID récupéré en batch
+                        if username in channel_ids_map:
+                            streamer.channel_id = channel_ids_map[username]
+                        else:
+                            # Fallback sur méthode individuelle si pas trouvé en batch
+                            logger.debug(f"⚠️ {username} non trouvé en batch, fallback individuel...")
+                            streamer.channel_id = self.twitch.get_channel_id(username)
+                        
                         streamer.settings = set_default_settings(
                             streamer.settings, Settings.streamer_settings
                         )
@@ -292,7 +308,9 @@ class TwitchChannelPointsMiner:
                         self.streamers.append(streamer)
                         loaded_count += 1
                         if loaded_count % 50 == 0:
-                            logger.info(f"📊 {loaded_count}/{len(streamers_name)} streamers chargés...")
+                            elapsed = time.time() - start_time
+                            remaining = (elapsed / loaded_count) * (len(streamers_name) - loaded_count)
+                            logger.info(f"📊 {loaded_count}/{len(streamers_name)} streamers chargés... (~{remaining/60:.1f} min restantes)")
                     except StreamerDoesNotExistException:
                         failed_count += 1
                         logger.info(
