@@ -135,7 +135,7 @@ class BetSettings(object):
 
 
 class Bet(object):
-    __slots__ = ["outcomes", "decision", "total_users", "total_points", "settings"]
+    __slots__ = ["outcomes", "decision", "total_users", "total_points", "settings", "_event_title"]
 
     def __init__(self, outcomes: list, settings: BetSettings):
         self.outcomes = outcomes
@@ -144,6 +144,7 @@ class Bet(object):
         self.total_users = 0
         self.total_points = 0
         self.settings = settings
+        self._event_title = ""  # Titre de l'événement pour logging (utilisé par CROWD_WISDOM)
 
     def update_outcomes(self, outcomes):
         for index in range(0, len(self.outcomes)):
