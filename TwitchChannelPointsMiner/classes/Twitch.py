@@ -66,10 +66,10 @@ class Twitch(object):
     ]
 
     def __init__(self, username, user_agent, password=None):
-        # Sur Railway, sauvegarder dans le dossier du projet (persiste entre déploiements)
+        # Sur Fly.io, sauvegarder dans le dossier du projet (persiste entre déploiements)
         # Sinon utiliser ./cookies comme avant
-        if os.getenv("RAILWAY_ENVIRONMENT"):
-            # Railway : sauvegarder dans le répertoire du projet
+        if os.getenv("FLY_APP_NAME"):
+            # Fly.io : sauvegarder dans le répertoire du projet
             self.cookies_file = os.path.join(Path().absolute(), f".{username}_cookies.pkl")
         else:
             # Local : utiliser le dossier cookies

@@ -77,8 +77,8 @@ class GitHubCache:
                     except:
                         pass
 
-            # Auto-commit si on est sur Railway (pas en local pour éviter les conflits)
-            if os.getenv("RAILWAY_ENVIRONMENT") and self._should_auto_commit():
+            # Auto-commit si on est sur Fly.io (pas en local pour éviter les conflits)
+            if os.getenv("FLY_APP_NAME") and self._should_auto_commit():
                 self._git_commit_followers(len(followers))
 
             logger.info(

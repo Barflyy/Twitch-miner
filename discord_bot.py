@@ -47,12 +47,10 @@ followers_count_message_id = None  # ID du message dans le salon "followers Barf
 TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
 
 def get_cache_file_path():
-    """Retourne le chemin du fichier de cache (persiste sur Railway via volume)"""
-    if os.getenv("RAILWAY_ENVIRONMENT"):
-        # Railway : utiliser le volume monté /cookies (persiste entre déploiements)
-        cookies_dir = Path("/cookies")
-        cookies_dir.mkdir(parents=True, exist_ok=True)
-        return cookies_dir / "followers_cache.json"
+    """Retourne le chemin du fichier de cache (persiste sur Fly.io)"""
+    if os.getenv("FLY_APP_NAME"):
+        # Fly.io : sauvegarder dans le répertoire du projet (persiste entre déploiements)
+        return Path("followers_cache.json")
     else:
         # Local : sauvegarder dans le dossier du projet
         return Path("followers_cache.json")

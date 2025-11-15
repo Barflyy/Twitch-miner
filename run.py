@@ -19,9 +19,9 @@ if not username:
 
 print("🔐 Mode d'authentification: TV Login (code d'activation Twitch)")
 
-# Sur Railway, les cookies sont sauvegardés dans le dossier projet (pas de volume requis)
+# Sur Fly.io, les cookies sont sauvegardés dans le dossier projet (persiste entre déploiements)
 # Vérifier si des cookies existent déjà
-if os.getenv("RAILWAY_ENVIRONMENT"):
+if os.getenv("FLY_APP_NAME"):
     cookie_file = Path(f".{username}_cookies.pkl")
 else:
     cookie_file = Path("cookies") / f"{username}.pkl"
@@ -33,10 +33,10 @@ else:
     print("⚠️ Aucun cookie trouvé")
     print("💡 PREMIÈRE FOIS : Le bot va afficher un code d'activation")
     print("📱 Va sur https://www.twitch.tv/activate et entre le code affiché")
-    print("⏳ ATTENTION: Sur Railway, tu as 15 minutes pour entrer le code avant timeout")
+    print("⏳ ATTENTION: Sur Fly.io, tu as 15 minutes pour entrer le code avant timeout")
     
     # Supprimer les anciens cookies obsolètes
-    if not os.getenv("RAILWAY_ENVIRONMENT"):
+    if not os.getenv("FLY_APP_NAME"):
         cookies_dir = Path("cookies")
         if cookies_dir.exists():
             for old_cookie in cookies_dir.glob("*.pkl"):
