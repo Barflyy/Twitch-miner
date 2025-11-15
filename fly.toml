@@ -4,7 +4,7 @@ primary_region = "iad"
 [build]
 
 [processes]
-  app = "python -u launcher.py"
+  app = "python -u start.py"
 
 [[vm]]
 cpu_kind = "shared"

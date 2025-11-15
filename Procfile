@@ -1,2 +1,2 @@
-worker: python -u launcher.py
+worker: python -u start.py
 
