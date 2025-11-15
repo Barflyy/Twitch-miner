@@ -28,11 +28,43 @@ class CrowdWisdomConfig:
     # Seuils pour money flow divergence
     SIGNIFICANT_RATIO_DIFF = 1.3     # 30% de différence minimum
 
+    # === SYSTÈME DE MISE À 3 NIVEAUX ===
+    CONSERVATIVE = 0.02              # 2% - Signaux faibles
+    STANDARD = 0.05                  # 5% - Signaux standards
+    AGGRESSIVE = 0.10                # 10% - Signaux forts
+    
     # Montants
-    BASE_PERCENTAGE = 5.0            # % de base de la bankroll
+    BASE_PERCENTAGE = 5.0            # % de base de la bankroll (legacy, utilise les niveaux ci-dessus)
     MIN_BET = 50
     MAX_BET = 50000
-    MAX_BANKROLL_RISK = 0.15         # Max 15% sur un bet
+    MAX_SINGLE_BET_PCT = 0.15        # Max 15% sur un bet
+    MAX_PER_STREAM_PCT = 0.30        # Max 30% sur un streamer
+    MAX_ACTIVE_BETS_PCT = 0.50       # Max 50% en bets actifs
+
+    # Multiplicateurs de confiance
+    CONFIDENCE_MULTIPLIERS = {
+        0.85: 1.5,   # Très confiant → +50%
+        0.75: 1.3,   # Confiant → +30%
+        0.65: 1.0,   # Standard
+        0.55: 0.8,   # Peu confiant → -20%
+        0.45: 0.6    # Très incertain → -40%
+    }
+    
+    # Multiplicateurs de conviction
+    CONVICTION_MULTIPLIERS = {
+        'high': 1.2,
+        'medium': 1.0,
+        'low': 0.7
+    }
+    
+    # Ajustements dynamiques selon bankroll
+    BANKROLL_ADJUSTMENTS = {
+        1.5: 1.2,    # +50% → +20% mise
+        1.2: 1.0,    # +20% → standard
+        0.8: 1.0,    # -20% → standard
+        0.5: 0.7,    # -50% → -30% mise
+        0.0: 0.5     # -100%+ → -50% mise (survie)
+    }
 
     # Filtres
     MIN_TOTAL_USERS = 150            # Skip si < 150 participants
@@ -244,14 +276,18 @@ class CrowdWisdomStrategy:
                     "choice": consensus_choice,
                     "confidence": min(consensus_pct / 100, 0.9),  # Max 90%
                     "reason": f"💪 STRONG CONSENSUS ({consensus_pct:.0f}%) + haute conviction",
-                    "amount_multiplier": 1.5
+                    "signal_type": "strong_consensus",
+                    "conviction": "high",
+                    "amount_multiplier": 1.5  # Legacy
                 }
             elif conviction["overall"] == "medium":
                 return {
                     "choice": consensus_choice,
                     "confidence": 0.65,
                     "reason": f"👥 Consensus ({consensus_pct:.0f}%) mais conviction moyenne",
-                    "amount_multiplier": 1.0
+                    "signal_type": "strong_consensus",
+                    "conviction": "medium",
+                    "amount_multiplier": 1.0  # Legacy
                 }
             else:
                 # Consensus mais faible conviction = suspect
@@ -272,7 +308,9 @@ class CrowdWisdomStrategy:
                     "choice": majority_choice,
                     "confidence": 0.7,
                     "reason": f"💰 Consensus + big money alignés",
-                    "amount_multiplier": 1.3
+                    "signal_type": "weak_consensus",
+                    "conviction": pattern["conviction_level"].get("overall", "medium"),
+                    "amount_multiplier": 1.3  # Legacy
                 }
             else:
                 # Divergence users vs money → suit l'argent
@@ -282,7 +320,9 @@ class CrowdWisdomStrategy:
                         "choice": big_money_choice,
                         "confidence": 0.65,
                         "reason": f"💵 Big money diverge de la foule (ratio {avg_ratio:.2f})",
-                        "amount_multiplier": 1.2
+                        "signal_type": "weak_consensus",
+                        "conviction": pattern["conviction_level"].get("overall", "medium"),
+                        "amount_multiplier": 1.2  # Legacy
                     }
 
         # === STRATÉGIE 4: Divided - cherche des indices subtils ===
@@ -295,14 +335,18 @@ class CrowdWisdomStrategy:
                     "choice": 0,
                     "confidence": 0.55,
                     "reason": "🤔 50/50 mais conviction sur option 1",
-                    "amount_multiplier": 0.8
+                    "signal_type": "divided",
+                    "conviction": "high",
+                    "amount_multiplier": 0.8  # Legacy
                 }
             elif conviction["option_2_conviction"] == "high" and conviction["option_1_conviction"] != "high":
                 return {
                     "choice": 1,
                     "confidence": 0.55,
                     "reason": "🤔 50/50 mais conviction sur option 2",
-                    "amount_multiplier": 0.8
+                    "signal_type": "divided",
+                    "conviction": "high",
+                    "amount_multiplier": 0.8  # Legacy
                 }
             else:
                 # Vraiment 50/50 sans signal → SKIP
@@ -313,37 +357,135 @@ class CrowdWisdomStrategy:
         return None
 
     def calculate_amount_from_signal(self, balance: int, decision: Dict,
-                                    base_percentage: float = 5.0) -> int:
+                                    base_percentage: float = 5.0,
+                                    starting_balance: int = None) -> int:
         """
-        Ajuste le montant selon la force du signal.
+        Calcule le montant optimal selon le type de signal avec système à 3 niveaux.
 
         Args:
             balance: Solde actuel de channel points
-            decision: Décision avec confidence et amount_multiplier
-            base_percentage: Pourcentage de base
+            decision: Décision avec confidence, amount_multiplier, signal_type, conviction
+            base_percentage: Pourcentage de base (legacy, non utilisé)
+            starting_balance: Solde initial pour ajustement dynamique
 
         Returns:
             Montant à miser
         """
+        signal_type = decision.get("signal_type", "divided")
         confidence = decision.get("confidence", 0.5)
-        multiplier = decision.get("amount_multiplier", 1.0)
-
-        # Calcul de base
-        base_amount = balance * (base_percentage / 100)
-
-        # Ajustement selon confiance + multiplier
-        final_percentage = base_percentage * confidence * multiplier
-        final_amount = int(balance * (final_percentage / 100))
-
-        # Limites de sécurité
-        min_bet = self.config.MIN_BET
-        max_bet = min(int(balance * self.config.MAX_BANKROLL_RISK), self.config.MAX_BET)
-
-        amount = max(min_bet, min(final_amount, max_bet))
-
-        logger.info(f"💵 Montant: {amount:,} pts (conf:{confidence:.0%} × mult:{multiplier:.1f})")
-
+        conviction = decision.get("conviction", "medium")
+        
+        # === NIVEAU 1: Sélection du % de base selon type de signal ===
+        base_percentage = self._get_base_percentage(signal_type, conviction)
+        
+        # === NIVEAU 2: Ajustement selon confiance ===
+        confidence_multiplier = self._get_confidence_multiplier(confidence)
+        
+        # === NIVEAU 3: Ajustement selon conviction ===
+        conviction_multiplier = self._get_conviction_multiplier(conviction)
+        
+        # === NIVEAU 4: Ajustement dynamique selon bankroll ===
+        bankroll_multiplier = 1.0
+        if starting_balance and starting_balance > 0:
+            bankroll_multiplier = self._get_bankroll_adjustment(balance, starting_balance)
+        
+        # Calcul final
+        final_percentage = base_percentage * confidence_multiplier * conviction_multiplier * bankroll_multiplier
+        
+        # Limite de sécurité absolue
+        final_percentage = min(final_percentage, self.config.MAX_SINGLE_BET_PCT)
+        
+        amount = int(balance * final_percentage)
+        
+        # Application des limites
+        amount = max(self.config.MIN_BET, min(amount, self.config.MAX_BET))
+        
+        # Log détaillé
+        logger.info(f"""
+        💵 CALCUL MISE:
+        ├─ Type signal: {signal_type}
+        ├─ Base: {base_percentage*100:.1f}%
+        ├─ × Confiance ({confidence:.0%}): {confidence_multiplier:.2f}
+        ├─ × Conviction ({conviction}): {conviction_multiplier:.2f}
+        ├─ × Bankroll: {bankroll_multiplier:.2f}
+        ├─ = Final: {final_percentage*100:.1f}%
+        └─ Montant: {amount:,} pts (bankroll: {balance:,})
+        """)
+        
         return amount
+    
+    def _get_base_percentage(self, signal_type: str, conviction: str) -> float:
+        """
+        Détermine le % de base selon le type de signal.
+        
+        Args:
+            signal_type: 'sharp_signal', 'strong_consensus', 'weak_consensus', 'divided'
+            conviction: 'high', 'medium', 'low'
+        """
+        if signal_type == 'sharp_signal':
+            # Signal SHARP = meilleur signal possible
+            return self.config.AGGRESSIVE  # 10%
+        
+        elif signal_type == 'strong_consensus':
+            # Consensus fort avec conviction
+            if conviction == 'high':
+                return self.config.AGGRESSIVE  # 10%
+            else:
+                return self.config.STANDARD    # 5%
+        
+        elif signal_type == 'weak_consensus':
+            # Consensus faible
+            return self.config.STANDARD  # 5%
+        
+        elif signal_type == 'divided':
+            # 50/50 avec signal subtil
+            return self.config.CONSERVATIVE  # 2%
+        
+        else:
+            return self.config.CONSERVATIVE  # 2% par défaut
+    
+    def _get_confidence_multiplier(self, confidence: float) -> float:
+        """
+        Ajuste selon la confiance (0.0 - 1.0).
+        """
+        # Trouve le multiplicateur le plus proche
+        thresholds = sorted(self.config.CONFIDENCE_MULTIPLIERS.keys(), reverse=True)
+        
+        for threshold in thresholds:
+            if confidence >= threshold:
+                return self.config.CONFIDENCE_MULTIPLIERS[threshold]
+        
+        # Si confiance < 0.45, utiliser le plus bas
+        return self.config.CONFIDENCE_MULTIPLIERS[0.45]
+    
+    def _get_conviction_multiplier(self, conviction: str) -> float:
+        """
+        Ajuste selon la conviction des autres parieurs.
+        """
+        return self.config.CONVICTION_MULTIPLIERS.get(conviction, 1.0)
+    
+    def _get_bankroll_adjustment(self, current_balance: int, starting_balance: int) -> float:
+        """
+        Ajuste le % selon l'état de la bankroll.
+        
+        Si on gagne beaucoup → on peut être plus agressif
+        Si on perd → on devient conservateur
+        """
+        if starting_balance <= 0:
+            return 1.0
+        
+        # Ratio actuel vs départ
+        ratio = current_balance / starting_balance
+        
+        # Trouve le seuil le plus proche
+        thresholds = sorted(self.config.BANKROLL_ADJUSTMENTS.keys(), reverse=True)
+        
+        for threshold in thresholds:
+            if ratio >= threshold:
+                return self.config.BANKROLL_ADJUSTMENTS[threshold]
+        
+        # Si ratio < 0.0 (impossible mais sécurité)
+        return self.config.BANKROLL_ADJUSTMENTS[0.0]
 
     def should_bet(self, outcomes: List[Dict], balance: int, title: str = "") -> Optional[Dict]:
         """
@@ -378,11 +520,13 @@ class CrowdWisdomStrategy:
         if decision is None:
             return None
 
-        # Calcul du montant
+        # Calcul du montant avec système à 3 niveaux
+        # Note: starting_balance pourrait être passé depuis l'extérieur si disponible
         decision["amount"] = self.calculate_amount_from_signal(
             balance=balance,
             decision=decision,
-            base_percentage=self.config.BASE_PERCENTAGE
+            base_percentage=self.config.BASE_PERCENTAGE,
+            starting_balance=None  # TODO: Passer depuis EventPrediction si disponible
         )
 
         # Ajouter l'ID de l'outcome choisi
