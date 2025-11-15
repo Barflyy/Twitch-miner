@@ -339,10 +339,11 @@ class TwitchChannelPointsMiner:
                         # Mettre à jour les infos du stream si disponibles
                         if streamer.username in streams_data:
                             stream_data = streams_data[streamer.username]
+                            game_name = stream_data.get('game_name', '')
                             streamer.stream.update(
                                 broadcast_id=None,  # Pas disponible via Helix
                                 title=stream_data.get('title', ''),
-                                game={'name': stream_data.get('game_name', '')},
+                                game={'name': game_name, 'displayName': game_name} if game_name else {},
                                 tags=[],
                                 viewers_count=stream_data.get('viewer_count', 0)
                             )
