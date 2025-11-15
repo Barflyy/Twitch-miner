@@ -58,6 +58,50 @@ class EventPrediction(object):
 
     def closing_bet_after(self, timestamp):
         return float_round(self.prediction_window_seconds - self.elapsed(timestamp))
+    
+    def get_bet_delay(self, timestamp):
+        """
+        Calcule le délai réel avant de placer le bet selon delay_mode et delay
+        Retourne le nombre de secondes à attendre avant de placer le bet
+        """
+        from TwitchChannelPointsMiner.classes.entities.Bet import DelayMode
+        
+        bet_settings = self.streamer.settings.bet
+        if bet_settings is None:
+            # Fallback : utiliser closing_bet_after si pas de settings
+            return self.closing_bet_after(timestamp)
+        
+        # S'assurer que les valeurs par défaut sont appliquées
+        if not hasattr(bet_settings, 'delay') or bet_settings.delay is None:
+            bet_settings.default()
+        if not hasattr(bet_settings, 'delay_mode') or bet_settings.delay_mode is None:
+            bet_settings.default()
+        
+        delay_mode = bet_settings.delay_mode
+        delay = bet_settings.delay
+        elapsed = self.elapsed(timestamp)
+        remaining = self.closing_bet_after(timestamp)
+        
+        # Calculer le délai selon le mode
+        if delay_mode == DelayMode.FROM_START:
+            # Placer le bet 'delay' secondes après le début
+            wait_time = max(0, delay - elapsed)
+            return float_round(wait_time)
+        elif delay_mode == DelayMode.FROM_END:
+            # Placer le bet 'delay' secondes avant la fin
+            # Exemple : si remaining = 1800s et delay = 6s, on attend 1794s
+            wait_time = max(0, remaining - delay)
+            return float_round(wait_time)
+        elif delay_mode == DelayMode.PERCENTAGE:
+            # Placer le bet quand 'delay' pourcent du temps est écoulé
+            # delay est un pourcentage (0.0 à 1.0)
+            target_elapsed = self.prediction_window_seconds * delay
+            wait_time = max(0, target_elapsed - elapsed)
+            return float_round(wait_time)
+        else:
+            # Fallback : utiliser FROM_END avec delay=6 par défaut
+            wait_time = max(0, remaining - 6)
+            return float_round(wait_time)
 
     def print_recap(self) -> str:
         return f"{self}\n\t\t{self.bet}\n\t\tResult: {self.result['string']}"

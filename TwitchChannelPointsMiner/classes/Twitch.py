@@ -1191,6 +1191,28 @@ class Twitch(object):
             return None  # En cas d'erreur, on ne peut pas déterminer
     
     def make_predictions(self, event):
+        # Vérifier que l'événement existe toujours et est actif
+        if event is None:
+            logger.warning(
+                "⚠️ Événement None dans make_predictions, impossible de placer le bet",
+                extra={
+                    "emoji": ":warning:",
+                    "event": Events.BET_FAILED,
+                },
+            )
+            return
+        
+        # Vérifier le statut de l'événement
+        if event.status != "ACTIVE":
+            logger.info(
+                f"⚠️ Événement {event.event_id} n'est plus ACTIVE (statut: {event.status}), bet annulé",
+                extra={
+                    "emoji": ":warning:",
+                    "event": Events.BET_FAILED,
+                },
+            )
+            return
+        
         decision = event.bet.calculate(event.streamer.channel_points)
         # selector_index = 0 if decision["choice"] == "A" else 1
 
@@ -1213,6 +1235,7 @@ class Twitch(object):
                 },
             )
             return  # Ne pas essayer de placer le pari
+        
         if event.status == "ACTIVE":
             skip, compared_value = event.bet.skip()
             if skip is True:

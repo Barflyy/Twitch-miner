@@ -295,16 +295,39 @@ class WebSocketsPool:
                                         > bet_settings.minimum_points
                                     ):
                                         ws.events_predictions[event_id] = event
-                                        start_after = event.closing_bet_after(
-                                            current_tmsp
-                                        )
+                                        
+                                        # Calculer le délai réel selon delay_mode et delay
+                                        start_after = event.get_bet_delay(current_tmsp)
+                                        
+                                        # Vérifier que le délai est valide (positif et pas trop long)
+                                        if start_after <= 0:
+                                            logger.warning(
+                                                f"⚠️ Délai invalide ({start_after}s) pour {event}, placement immédiat",
+                                                extra={
+                                                    "emoji": ":warning:",
+                                                    "event": Events.BET_START,
+                                                },
+                                            )
+                                            # Placer immédiatement si délai invalide
+                                            start_after = 0.1
+                                        
+                                        # Limiter le délai à 1 heure max pour éviter les timers trop longs
+                                        if start_after > 3600:
+                                            logger.warning(
+                                                f"⚠️ Délai trop long ({start_after}s) pour {event}, limité à 1h",
+                                                extra={
+                                                    "emoji": ":warning:",
+                                                    "event": Events.BET_START,
+                                                },
+                                            )
+                                            start_after = 3600
 
                                         place_bet_thread = Timer(
                                             start_after,
                                             ws.twitch.make_predictions,
                                             (ws.events_predictions[event_id],),
                                         )
-                                        place_bet_thread.daemon = True
+                                        place_bet_thread.daemon = False  # Non-daemon pour s'assurer qu'il s'exécute
                                         place_bet_thread.start()
 
                                         logger.info(
