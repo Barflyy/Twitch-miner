@@ -323,21 +323,67 @@ class TwitchChannelPointsMiner:
             
             logger.info(f"✅ {loaded_count} streamers chargés avec succès, {failed_count} échecs")
 
+            # 🚀 OPTIMISATION : Vérifier l'état en ligne en batch via API Helix
+            logger.info("⚡ Vérification de l'état en ligne en batch via API Helix...")
+            start_time = time.time()
+            online_status = self.twitch.get_followed_streams_online([s.username for s in self.streamers])
+            if online_status:
+                online_set = online_status.get('online', set())
+                offline_set = online_status.get('offline', set())
+                streams_data = online_status.get('streams_data', {})
+                
+                # Mettre à jour l'état en ligne de tous les streamers
+                for streamer in self.streamers:
+                    if streamer.username in online_set:
+                        streamer.set_online()
+                        # Mettre à jour les infos du stream si disponibles
+                        if streamer.username in streams_data:
+                            stream_data = streams_data[streamer.username]
+                            streamer.stream.update(
+                                broadcast_id=None,  # Pas disponible via Helix
+                                title=stream_data.get('title', ''),
+                                game={'name': stream_data.get('game_name', '')},
+                                tags=[],
+                                viewers_count=stream_data.get('viewer_count', 0)
+                            )
+                    elif streamer.username in offline_set:
+                        streamer.set_offline()
+                
+                batch_time = time.time() - start_time
+                logger.info(f"✅ État en ligne vérifié en {batch_time:.1f}s : {len(online_set)} en ligne, {len(offline_set)} hors ligne")
+            else:
+                logger.warning("⚠️ Impossible de vérifier l'état en ligne en batch, fallback individuel...")
+                # Fallback sur méthode individuelle
+                for streamer in self.streamers:
+                    time.sleep(random.uniform(0.1, 0.3))
+                    try:
+                        self.twitch.check_streamer_online(streamer)
+                    except StreamerDoesNotExistException:
+                        pass
+
             # Populate the streamers with default values.
-            # 1. Load channel points and auto-claim bonus
-            # 2. Check if streamers are online
-            # 3. DEACTIVATED: Check if the user is a moderator. (was used before the 5th of April 2021 to deactivate predictions)
+            # 1. Load channel points and auto-claim bonus (nécessite GraphQL, pas d'optimisation possible)
+            # Note: Les channel points sont des données privées, nécessitent GraphQL avec auth
+            logger.info("⚡ Chargement des channel points (GraphQL, peut prendre du temps)...")
+            start_time = time.time()
+            points_loaded = 0
             for streamer in self.streamers:
-                time.sleep(random.uniform(0.3, 0.7))
+                time.sleep(random.uniform(0.1, 0.2))  # Réduire le délai
                 try:
                     self.twitch.load_channel_points_context(streamer)
-                    self.twitch.check_streamer_online(streamer)
-                    # self.twitch.viewer_is_mod(streamer)
+                    points_loaded += 1
+                    if points_loaded % 50 == 0:
+                        elapsed = time.time() - start_time
+                        remaining = (elapsed / points_loaded) * (len(self.streamers) - points_loaded)
+                        logger.info(f"📊 {points_loaded}/{len(self.streamers)} channel points chargés... (~{remaining/60:.1f} min restantes)")
                 except StreamerDoesNotExistException:
                     logger.info(
                         f"Streamer {streamer.username} does not exist",
                         extra={"emoji": ":cry:"},
                     )
+            
+            points_time = time.time() - start_time
+            logger.info(f"✅ {points_loaded} channel points chargés en {points_time:.1f}s")
 
             self.original_streamers = [
                 streamer.channel_points for streamer in self.streamers
