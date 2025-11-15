@@ -210,70 +210,82 @@ try:
             print(f"🚫 {len(streamers_from_json) - len(streamers_filtered)} streamer(s) blacklisté(s)")
         
         # Lancer la mise à jour du fichier en arrière-plan (thread séparé)
-        # ATTENTION : Attend que l'authentification Twitch soit complète avant de lancer
+        # Met à jour le fichier JSON toutes les 5 minutes pour détecter les nouveaux follows
         import threading
-        def update_followers_file():
-            """Met à jour le fichier JSON via l'API Helix en arrière-plan"""
-            try:
-                # Attendre que l'authentification Twitch soit complète
-                # On vérifie que le token OAuth est disponible
-                max_wait = 300  # Maximum 5 minutes d'attente
-                wait_interval = 2  # Vérifier toutes les 2 secondes
-                waited = 0
+        def update_followers_file_loop():
+            """Met à jour le fichier JSON via l'API Helix toutes les 5 minutes"""
+            # 1. Attendre que l'authentification Twitch soit complète
+            max_wait = 300  # Maximum 5 minutes d'attente
+            wait_interval = 2  # Vérifier toutes les 2 secondes
+            waited = 0
+            
+            print("⏳ Attente de l'authentification Twitch...")
+            while waited < max_wait:
+                try:
+                    # Vérifier si le token OAuth est disponible
+                    auth_token = twitch_miner.twitch.twitch_login.get_auth_token()
+                    if auth_token:
+                        print("✅ Authentification Twitch complète")
+                        break
+                except:
+                    pass
                 
-                print("⏳ Attente de l'authentification Twitch avant mise à jour du fichier JSON...")
-                while waited < max_wait:
-                    try:
-                        # Vérifier si le token OAuth est disponible
-                        auth_token = twitch_miner.twitch.twitch_login.get_auth_token()
-                        if auth_token:
-                            print("✅ Authentification Twitch complète, démarrage de la mise à jour...")
-                            break
-                    except:
-                        pass
-                    
-                    time.sleep(wait_interval)
-                    waited += wait_interval
-                    
-                    if waited % 10 == 0:  # Afficher un message toutes les 10 secondes
-                        print(f"⏳ Attente authentification... ({waited}s/{max_wait}s)")
+                time.sleep(wait_interval)
+                waited += wait_interval
                 
-                if waited >= max_wait:
-                    print("⚠️ Timeout : authentification Twitch non complète après 5 minutes")
-                    print("⚠️ La mise à jour du fichier JSON sera ignorée")
-                    return
-                
-                # Attendre encore quelques secondes pour que tout soit initialisé
-                time.sleep(5)
-                
-                print("🔄 Mise à jour du fichier JSON via l'API Helix...")
-                # Utiliser l'API Helix pour récupérer les followers
-                helix_followers = twitch_miner.twitch._get_followers_via_helix_api()
-                if helix_followers and len(helix_followers) > 0:
-                    # Sauvegarder dans le fichier JSON
-                    import sys
-                    sys.path.append(str(Path(__file__).parent))
-                    from github_cache import get_github_cache
-                    github_cache = get_github_cache(username)
-                    success = github_cache.save_followers(helix_followers)
-                    if success:
-                        new_count = len(helix_followers) - len(streamers_from_json)
-                        print(f"✅ Fichier JSON mis à jour : {len(helix_followers)} followers", end="")
-                        if new_count > 0:
-                            print(f" (dont {new_count} nouveaux)")
-                        elif new_count < 0:
-                            print(f" ({abs(new_count)} en moins)")
+                if waited % 30 == 0:  # Afficher un message toutes les 30 secondes
+                    print(f"⏳ Attente authentification... ({waited}s)")
+            
+            if waited >= max_wait:
+                print("⚠️ Timeout : authentification Twitch non complète après 5 minutes")
+                print("⚠️ La mise à jour périodique du fichier JSON sera ignorée")
+                return
+            
+            # Attendre encore quelques secondes pour que tout soit initialisé
+            time.sleep(5)
+            
+            # 2. Boucle de mise à jour toutes les 5 minutes
+            update_interval = 300  # 5 minutes en secondes
+            print(f"🔄 Mise à jour automatique du fichier JSON activée (toutes les {update_interval // 60} minutes)")
+            
+            while True:
+                try:
+                    print("🔄 Mise à jour du fichier JSON via l'API Helix...")
+                    # Utiliser l'API Helix pour récupérer les followers
+                    helix_followers = twitch_miner.twitch._get_followers_via_helix_api()
+                    if helix_followers and len(helix_followers) > 0:
+                        # Sauvegarder dans le fichier JSON
+                        import sys
+                        sys.path.append(str(Path(__file__).parent))
+                        from github_cache import get_github_cache
+                        github_cache = get_github_cache(username)
+                        success = github_cache.save_followers(helix_followers)
+                        if success:
+                            # Charger l'ancienne liste pour comparer
+                            old_followers = github_cache.load_followers()
+                            old_count = len(old_followers) if old_followers else len(streamers_from_json)
+                            new_count = len(helix_followers) - old_count
+                            
+                            print(f"✅ Fichier JSON mis à jour : {len(helix_followers)} followers", end="")
+                            if new_count > 0:
+                                print(f" (+{new_count} nouveaux)")
+                            elif new_count < 0:
+                                print(f" ({abs(new_count)} en moins)")
+                            else:
+                                print(" (aucun changement)")
                         else:
-                            print(" (aucun changement)")
+                            print("⚠️ Échec sauvegarde fichier JSON")
                     else:
-                        print("⚠️ Échec sauvegarde fichier JSON")
-                else:
-                    print("⚠️ API Helix n'a pas retourné de followers")
-            except Exception as e:
-                print(f"⚠️ Erreur mise à jour fichier JSON : {e}")
+                        print("⚠️ API Helix n'a pas retourné de followers")
+                except Exception as e:
+                    print(f"⚠️ Erreur mise à jour fichier JSON : {e}")
+                
+                # Attendre 5 minutes avant la prochaine mise à jour
+                print(f"⏰ Prochaine mise à jour dans {update_interval // 60} minutes...")
+                time.sleep(update_interval)
         
         # Lancer la mise à jour en arrière-plan
-        update_thread = threading.Thread(target=update_followers_file, daemon=True)
+        update_thread = threading.Thread(target=update_followers_file_loop, daemon=True)
         update_thread.start()
         
         # Miner avec le fichier JSON (sans attendre la mise à jour)

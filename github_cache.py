@@ -95,9 +95,11 @@ class GitHubCache:
                     except:
                         pass
 
-            # Auto-commit si on est sur Fly.io (pas en local pour éviter les conflits)
-            if os.getenv("FLY_APP_NAME") and self._should_auto_commit():
-                self._git_commit_followers(len(followers))
+            # ⚠️ DÉSACTIVÉ : Auto-commit désactivé pour éviter les redéploiements en boucle
+            # Le fichier est sauvegardé localement uniquement
+            # Pour pousser vers GitHub, utilisez un mécanisme externe (webhook, cron, etc.)
+            # if os.getenv("FLY_APP_NAME") and self._should_auto_commit():
+            #     self._git_commit_followers(len(followers))
 
             logger.info(
                 f"📂 Cache GitHub sauvegardé : {len(followers)} followers → {self.cache_file}",
