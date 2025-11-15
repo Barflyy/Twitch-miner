@@ -18,13 +18,20 @@ class GitHubCache:
     
     def __init__(self, username: str):
         self.username = username
+        # Chemin du fichier : followers_data/username_followers.json
+        # Le fichier doit être présent dans le repo (copié par Dockerfile)
         self.cache_file = Path(f"followers_data/{username}_followers.json")
         self.cache_file.parent.mkdir(exist_ok=True)
+        
+        # Log pour debug
+        logger.debug(f"📂 Chemin cache : {self.cache_file.absolute()}")
+        logger.debug(f"📂 Fichier existe : {self.cache_file.exists()}")
         
     def load_followers(self) -> List[str]:
         """Charge les followers depuis le fichier Git"""
         try:
             if self.cache_file.exists():
+                logger.debug(f"📂 Fichier trouvé : {self.cache_file}")
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 
@@ -38,11 +45,14 @@ class GitHubCache:
                     )
                     return followers
                 else:
-                    logger.warning("⚠️ Cache GitHub invalide ou expiré")
+                    # Log plus détaillé pour comprendre pourquoi le cache est invalide
+                    cache_age = time.time() - data.get('timestamp', 0)
+                    logger.warning(f"⚠️ Cache GitHub invalide ou expiré (âge: {cache_age/3600:.1f}h)")
             else:
+                logger.warning(f"⚠️ Fichier JSON introuvable : {self.cache_file.absolute()}")
                 logger.info("📂 Aucun cache GitHub trouvé, première synchronisation...")
         except Exception as e:
-            logger.error(f"❌ Erreur lecture cache GitHub : {e}")
+            logger.error(f"❌ Erreur lecture cache GitHub : {e}", exc_info=True)
         
         return []
     
