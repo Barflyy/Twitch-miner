@@ -24,8 +24,8 @@ intents.guilds = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Stockage des salons et messages
-streamer_channels = {}  # {streamer: channel_id}
-streamer_messages = {}  # {streamer: message_id} (message dans le salon)
+streamer_channels = {}  # {streamer: channel_id} - DÉPRÉCIÉ : Utilisé seulement pour compatibilité
+streamer_messages = {}  # {streamer: message_id} - DÉPRÉCIÉ : Utilisé seulement pour compatibilité
 streamer_data = {}   # {streamer: {stats}}
 streamer_data_cache = {}  # Cache pour détecter les changements
 category_channels = {}  # {category_id: [channel_ids]} - Suivi des canaux par catégorie
@@ -45,6 +45,11 @@ followers_count_channel_id = None  # ID du salon "followers Barflyy_"
 online_count_message_id = None  # ID du message dans le salon "streams en ligne"
 followers_count_message_id = None  # ID du message dans le salon "followers Barflyy_"
 TWITCH_USERNAME_TO_TRACK = "Barflyy_"  # Nom d'utilisateur Twitch à suivre pour les followers
+
+# 🆕 NOUVEAU SYSTÈME : Message épinglé unique
+pinned_list_channel_id = None  # ID du salon pour le message épinglé
+pinned_list_message_id = None  # ID du message épinglé qui liste tous les streamers
+USE_PINNED_MESSAGE = True  # Activer le système de message épinglé (au lieu de salons individuels)
 
 def get_cache_file_path():
     """Retourne le chemin du fichier de cache (persiste sur Fly.io et local)"""
@@ -95,7 +100,9 @@ def save_channels():
             'online_count_channel_id': online_count_channel_id,
             'followers_count_channel_id': followers_count_channel_id,
             'online_count_message_id': online_count_message_id,
-            'followers_count_message_id': followers_count_message_id
+            'followers_count_message_id': followers_count_message_id,
+            'pinned_list_channel_id': pinned_list_channel_id,
+            'pinned_list_message_id': pinned_list_message_id
         }
         with open('streamer_channels.json', 'w') as f:
             json.dump(data, f)
@@ -107,6 +114,7 @@ def load_channels():
     global streamer_channels, streamer_messages, category_channels, stats_channel_id, stats_message_id
     global online_count_channel_id, followers_count_channel_id
     global online_count_message_id, followers_count_message_id
+    global pinned_list_channel_id, pinned_list_message_id
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
@@ -120,6 +128,8 @@ def load_channels():
                 followers_count_channel_id = data.get('followers_count_channel_id')
                 online_count_message_id = data.get('online_count_message_id')
                 followers_count_message_id = data.get('followers_count_message_id')
+                pinned_list_channel_id = data.get('pinned_list_channel_id')
+                pinned_list_message_id = data.get('pinned_list_message_id')
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
         streamer_channels = {}
@@ -131,6 +141,8 @@ def load_channels():
         followers_count_channel_id = None
         online_count_message_id = None
         followers_count_message_id = None
+        pinned_list_channel_id = None
+        pinned_list_message_id = None
 
 def create_streamer_embed(streamer: str) -> discord.Embed:
     """Crée un embed pour un streamer"""
@@ -507,6 +519,90 @@ async def check_twitch_last_stream(username: str) -> dict:
     except Exception as e:
         return {'is_live': False, 'last_stream_ago_days': None, 'error': str(e)}
 
+async def get_last_stream_dates_batch(usernames: list) -> dict:
+    """🚀 Récupère la dernière date de stream pour plusieurs streamers en batch via API Helix
+    
+    Args:
+        usernames: Liste des usernames à vérifier
+    
+    Returns:
+        dict: {username: {'days_ago': int, 'last_stream_date': str or None}}
+    """
+    results = {}
+    
+    try:
+        # Utiliser l'API Helix /videos pour récupérer les dernières vidéos
+        # On doit d'abord récupérer les user_ids
+        async with aiohttp.ClientSession() as session:
+            CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"  # Client ID public Twitch
+            
+            # Diviser en chunks de 100 (limite API Helix)
+            chunks = [usernames[i:i+100] for i in range(0, len(usernames), 100)]
+            username_to_id = {}
+            
+            # Étape 1: Convertir usernames -> user_ids
+            for chunk in chunks:
+                usernames_param = "&".join([f"login={username}" for username in chunk])
+                users_url = f"https://api.twitch.tv/helix/users?{usernames_param}"
+                headers = {"Client-ID": CLIENT_ID}
+                
+                async with session.get(users_url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        for user in data.get("data", []):
+                            username_to_id[user.get("login", "").lower()] = user.get("id")
+            
+            # Étape 2: Récupérer les dernières vidéos pour chaque user_id
+            for username in usernames:
+                username_lower = username.lower()
+                user_id = username_to_id.get(username_lower)
+                
+                if not user_id:
+                    results[username_lower] = {'days_ago': None, 'last_stream_date': None}
+                    continue
+                
+                # Récupérer la dernière vidéo (type=archive = streams archivés)
+                videos_url = f"https://api.twitch.tv/helix/videos?user_id={user_id}&type=archive&first=1"
+                headers = {"Client-ID": CLIENT_ID}
+                
+                async with session.get(videos_url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        videos = data.get("data", [])
+                        
+                        if videos:
+                            # Prendre la vidéo la plus récente
+                            last_video = videos[0]
+                            created_at = last_video.get("created_at")
+                            
+                            if created_at:
+                                from datetime import datetime
+                                last_stream_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                                days_ago = (datetime.now(last_stream_time.tzinfo) - last_stream_time).days
+                                results[username_lower] = {
+                                    'days_ago': days_ago,
+                                    'last_stream_date': created_at
+                                }
+                            else:
+                                results[username_lower] = {'days_ago': None, 'last_stream_date': None}
+                        else:
+                            # Pas de vidéos = jamais streamé ou pas de VODs
+                            results[username_lower] = {'days_ago': None, 'last_stream_date': None}
+                    else:
+                        results[username_lower] = {'days_ago': None, 'last_stream_date': None}
+                
+                # Rate limiting: pause toutes les 20 requêtes
+                if list(results.keys()).index(username_lower) % 20 == 0:
+                    await asyncio.sleep(0.5)
+    
+    except Exception as e:
+        print(f"❌ Erreur get_last_stream_dates_batch: {e}")
+        # En cas d'erreur, retourner None pour tous
+        for username in usernames:
+            results[username.lower()] = {'days_ago': None, 'last_stream_date': None}
+    
+    return results
+
 async def update_stats_channels(guild):
     """Crée ou met à jour le salon de statistiques (streams en ligne seulement)"""
     global online_count_channel_id
@@ -776,9 +872,140 @@ def has_data_changed(streamer, new_data):
     
     return False
 
+async def create_or_update_pinned_list(guild):
+    """🆕 Crée ou met à jour le message épinglé unique qui liste tous les streamers"""
+    global pinned_list_channel_id, pinned_list_message_id
+    
+    # Utiliser le canal de commandes (CHANNEL_ID) pour le message épinglé
+    if not CHANNEL_ID or CHANNEL_ID == 0:
+        return
+    
+    try:
+        list_channel = bot.get_channel(CHANNEL_ID)
+        if not list_channel:
+            print(f"❌ Canal {CHANNEL_ID} introuvable pour le message épinglé")
+            return
+        
+        # Charger les données
+        load_data(force=True)
+        
+        # Trier les streamers : en ligne d'abord, puis hors ligne
+        sorted_streamers = sorted(
+            streamer_data.items(),
+            key=lambda x: (not x[1].get('online', False), x[0].lower())
+        )
+        
+        online_count = sum(1 for _, d in sorted_streamers if d.get('online', False))
+        offline_count = len(sorted_streamers) - online_count
+        
+        # Créer le contenu du message
+        content_lines = [
+            "# 📺 LISTE DES STREAMERS",
+            "",
+            f"🟢 **{online_count}** en ligne | 🔴 **{offline_count}** hors ligne | 📋 **{len(sorted_streamers)}** total",
+            "",
+            "## 🟢 STREAMERS EN LIGNE",
+            ""
+        ]
+        
+        # Streamers en ligne (limiter à 50 pour éviter message trop long)
+        online_list = []
+        for streamer, data in sorted_streamers:
+            if data.get('online', False):
+                balance = data.get('balance', 0)
+                balance_str = f"{balance:,.0f}".replace(',', ' ')
+                online_list.append(f"🟢 **{streamer}** - {balance_str} points")
+                if len(online_list) >= 50:
+                    online_list.append(f"... et {online_count - 50} autres")
+                    break
+        
+        if online_list:
+            content_lines.extend(online_list)
+        else:
+            content_lines.append("Aucun streamer en ligne actuellement")
+        
+        content_lines.extend([
+            "",
+            "## 🔴 STREAMERS HORS LIGNE",
+            ""
+        ])
+        
+        # Streamers hors ligne (limiter à 50)
+        offline_list = []
+        for streamer, data in sorted_streamers:
+            if not data.get('online', False):
+                balance = data.get('balance', 0)
+                balance_str = f"{balance:,.0f}".replace(',', ' ')
+                offline_list.append(f"🔴 **{streamer}** - {balance_str} points")
+                if len(offline_list) >= 50:
+                    offline_list.append(f"... et {offline_count - 50} autres")
+                    break
+        
+        if offline_list:
+            content_lines.extend(offline_list)
+        else:
+            content_lines.append("Aucun streamer hors ligne")
+        
+        content_lines.extend([
+            "",
+            "---",
+            "💡 Utilisez `!status <streamer>` pour voir les détails d'un streamer",
+            "🔄 Mise à jour automatique toutes les 30 secondes"
+        ])
+        
+        content = "\n".join(content_lines)
+        
+        # Limiter à 2000 caractères (limite Discord)
+        if len(content) > 2000:
+            content = content[:1990] + "\n... (trop de streamers pour afficher)"
+        
+        # Créer ou mettre à jour le message
+        if pinned_list_message_id:
+            try:
+                message = await list_channel.fetch_message(pinned_list_message_id)
+                await message.edit(content=content)
+                print(f"✅ Message épinglé mis à jour : {online_count} en ligne, {offline_count} hors ligne")
+            except discord.NotFound:
+                # Message supprimé, en créer un nouveau
+                message = await list_channel.send(content)
+                await message.pin()
+                pinned_list_message_id = message.id
+                pinned_list_channel_id = list_channel.id
+                save_channels()
+                print(f"✅ Nouveau message épinglé créé : {online_count} en ligne, {offline_count} hors ligne")
+        else:
+            # Créer le message et l'épingler
+            message = await list_channel.send(content)
+            await message.pin()
+            pinned_list_message_id = message.id
+            pinned_list_channel_id = list_channel.id
+            save_channels()
+            print(f"✅ Message épinglé créé : {online_count} en ligne, {offline_count} hors ligne")
+    
+    except Exception as e:
+        print(f"❌ Erreur création/mise à jour message épinglé : {e}")
+        import traceback
+        traceback.print_exc()
+
 @tasks.loop(seconds=30)
 async def update_channels():
     """Met à jour les salons streamers selon leur statut"""
+    global USE_PINNED_MESSAGE
+    
+    # 🆕 NOUVEAU SYSTÈME : Message épinglé unique
+    if USE_PINNED_MESSAGE:
+        try:
+            if CHANNEL_ID and CHANNEL_ID != 0:
+                channel = bot.get_channel(CHANNEL_ID)
+                if channel:
+                    guild = channel.guild
+                    await create_or_update_pinned_list(guild)
+                    return  # Ne pas créer de salons individuels
+        except Exception as e:
+            print(f"⚠️ Erreur système message épinglé, fallback salons individuels : {e}")
+            USE_PINNED_MESSAGE = False  # Désactiver si erreur
+    
+    # ANCIEN SYSTÈME : Salons individuels (fallback)
     if not CATEGORY_ID or CATEGORY_ID == 0:
         return
     
@@ -1673,29 +1900,40 @@ async def cleanup_inactive(ctx, days: int = 30, mode: str = "safe"):
             
             # Pour les autres, vérifier selon le mode
             if mode.lower() == "full":
-                # Mode FULL: vérifier l'activité réelle sur Twitch
-                stream_info = await check_twitch_last_stream(streamer)
-                
-                if stream_info['error']:
-                    # En cas d'erreur API, considérer comme potentiellement inactif
-                    inactive_streamers.append(streamer)
-                elif stream_info['last_stream_ago_days'] is not None:
-                    if stream_info['last_stream_ago_days'] > days:
-                        # N'a pas stream depuis X jours → vraiment inactif
-                        truly_inactive.append((streamer, stream_info['last_stream_ago_days']))
-                    else:
-                        # A stream récemment → actif
-                        active_streamers.append(streamer)
-                else:
-                    # Pas d'info de dernier stream → potentiellement inactif
-                    inactive_streamers.append(streamer)
-                
-                # Ralentir pour éviter le rate limit
-                if checked % 20 == 0:
-                    await asyncio.sleep(0.5)
+                # Mode FULL: vérifier l'activité réelle sur Twitch (sera fait en batch après)
+                inactive_streamers.append(streamer)
             else:
                 # Mode SAFE: juste marquer comme potentiellement inactif
                 inactive_streamers.append(streamer)
+        
+        # Si mode FULL, vérifier l'activité réelle en batch via API Helix
+        if mode.lower() == "full" and inactive_streamers:
+            await loading_msg.edit(content=f"🔍 Vérification de l'activité réelle via API Helix (batch)... {len(inactive_streamers)} streamers à vérifier")
+            last_stream_dates = await get_last_stream_dates_batch(inactive_streamers)
+            
+            # Réorganiser les listes selon les résultats
+            truly_inactive = []
+            newly_active = []
+            still_inactive = []
+            
+            for streamer in inactive_streamers:
+                streamer_lower = streamer.lower()
+                stream_info = last_stream_dates.get(streamer_lower, {})
+                days_ago = stream_info.get('days_ago')
+                
+                if days_ago is not None:
+                    if days_ago > days:
+                        # N'a pas stream depuis X jours → vraiment inactif
+                        truly_inactive.append((streamer, days_ago))
+                    else:
+                        # A stream récemment → actif
+                        newly_active.append(streamer)
+                        active_streamers.append(streamer)
+                else:
+                    # Pas d'info de dernier stream → potentiellement inactif
+                    still_inactive.append(streamer)
+            
+            inactive_streamers = still_inactive
         
         # Créer l'embed de résultats
         embed = discord.Embed(
