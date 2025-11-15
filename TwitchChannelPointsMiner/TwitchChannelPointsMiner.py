@@ -265,6 +265,8 @@ class TwitchChannelPointsMiner:
                 f"Loading data for {len(streamers_name)} streamers. Please wait...",
                 extra={"emoji": ":nerd_face:"},
             )
+            loaded_count = 0
+            failed_count = 0
             for username in streamers_name:
                 if username in streamers_name:
                     time.sleep(random.uniform(0.3, 0.7))
@@ -288,11 +290,20 @@ class TwitchChannelPointsMiner:
                                 streamer.username,
                             )
                         self.streamers.append(streamer)
+                        loaded_count += 1
+                        if loaded_count % 50 == 0:
+                            logger.info(f"📊 {loaded_count}/{len(streamers_name)} streamers chargés...")
                     except StreamerDoesNotExistException:
+                        failed_count += 1
                         logger.info(
                             f"Streamer {username} does not exist",
                             extra={"emoji": ":cry:"},
                         )
+                    except Exception as e:
+                        failed_count += 1
+                        logger.error(f"❌ Erreur chargement streamer {username}: {e}")
+            
+            logger.info(f"✅ {loaded_count} streamers chargés avec succès, {failed_count} échecs")
 
             # Populate the streamers with default values.
             # 1. Load channel points and auto-claim bonus
