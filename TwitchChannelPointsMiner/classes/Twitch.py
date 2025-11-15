@@ -254,51 +254,33 @@ class Twitch(object):
         🚀 NOUVELLE MÉTHODE RAPIDE : API Twitch Helix officielle
 
         Récupère TOUS les followers via l'API Helix (bien plus rapide que GraphQL)
-        Nécessite TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET en variables d'environnement
+        Utilise le User Access Token OAuth déjà authentifié par le bot
 
         Returns:
             list: Liste des usernames des streamers suivis, ou None si erreur
         """
-        client_id = os.getenv("TWITCH_CLIENT_ID")
-        client_secret = os.getenv("TWITCH_CLIENT_SECRET")
-
-        if not client_id or not client_secret:
-            logger.warning("⚠️ TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET requis pour API Helix")
-            logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
-            return None
-
         try:
-            # 1. Obtenir un access token OAuth (Client Credentials)
-            auth_url = "https://id.twitch.tv/oauth2/token"
-            auth_params = {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "client_credentials"
-            }
-
-            logger.info("🔑 Authentification API Twitch Helix...")
-            auth_response = requests.post(auth_url, params=auth_params, timeout=10)
-            auth_response.raise_for_status()
-            access_token = auth_response.json()["access_token"]
-
-            # 2. Headers pour les requêtes API Helix
-            headers = {
-                "Client-ID": client_id,
-                "Authorization": f"Bearer {access_token}"
-            }
-
-            # 3. Récupérer l'ID utilisateur depuis le username
-            username = self.twitch_login.username
-            user_url = f"https://api.twitch.tv/helix/users?login={username}"
-            user_response = requests.get(user_url, headers=headers, timeout=10)
-            user_response.raise_for_status()
-
-            user_data = user_response.json()["data"]
-            if not user_data:
-                logger.error(f"❌ Utilisateur {username} introuvable sur Twitch")
+            # 1. Utiliser le token OAuth User déjà authentifié
+            user_token = self.twitch_login.get_auth_token()
+            if not user_token:
+                logger.warning("⚠️ Pas de token OAuth utilisateur disponible")
+                logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
                 return None
 
-            user_id = user_data[0]["id"]
+            # 2. Headers pour les requêtes API Helix avec User Access Token
+            # L'API Helix nécessite un User Access Token pour /channels/followed
+            headers = {
+                "Client-ID": CLIENT_ID,  # Utilise le CLIENT_ID du bot (constante)
+                "Authorization": f"Bearer {user_token}"
+            }
+
+            # 3. Récupérer l'ID utilisateur depuis le username (déjà disponible)
+            user_id = self.twitch_login.get_user_id()
+            if not user_id:
+                logger.error("❌ User ID introuvable")
+                return None
+
+            logger.info(f"🔑 Utilisation API Twitch Helix avec User Access Token")
             logger.info(f"✅ User ID Twitch: {user_id}")
 
             # 4. Récupérer tous les followers avec pagination (API Helix)
