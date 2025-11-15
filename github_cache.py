@@ -47,34 +47,46 @@ class GitHubCache:
         return []
     
     def save_followers(self, followers: List[str]) -> bool:
-        """Sauvegarde et commit les followers sur GitHub"""
+        """Sauvegarde et commit les followers sur GitHub avec écriture atomique"""
         try:
-            # Préparer les données
+            # Préparer les données avec métadonnées enrichies
             cache_data = {
                 'timestamp': time.time(),
                 'username': self.username,
                 'followers': followers,
                 'count': len(followers),
-                'version': '3.0',
-                'last_update': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+                'version': '3.1',  # Version bump pour la nouvelle logique
+                'last_update': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
+                'cache_ttl_hours': 12  # Durée de validité du cache
             }
-            
-            # Écriture atomique
+
+            # Écriture atomique (évite corruption si crash pendant écriture)
             temp_file = self.cache_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, indent=2, ensure_ascii=False)
-            temp_file.replace(self.cache_file)
-            
+            try:
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(cache_data, f, indent=2, ensure_ascii=False)
+
+                # Remplacement atomique (opération système garantie atomique)
+                temp_file.replace(self.cache_file)
+
+            finally:
+                # Cleanup du fichier temporaire en cas d'erreur
+                if temp_file.exists():
+                    try:
+                        temp_file.unlink()
+                    except:
+                        pass
+
             # Auto-commit si on est sur Railway (pas en local pour éviter les conflits)
             if os.getenv("RAILWAY_ENVIRONMENT") and self._should_auto_commit():
                 self._git_commit_followers(len(followers))
-            
+
             logger.info(
                 f"📂 Cache GitHub sauvegardé : {len(followers)} followers → {self.cache_file}",
                 extra={"emoji": ":file_folder:"}
             )
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Erreur sauvegarde cache GitHub : {e}")
             return False
@@ -85,19 +97,26 @@ class GitHubCache:
             # Vérifier la structure
             required_keys = ['timestamp', 'username', 'followers', 'count']
             if not all(key in data for key in required_keys):
+                logger.warning("⚠️ Cache invalide : structure incomplète")
                 return False
-            
-            # Vérifier l'utilisateur
+
+            # Vérifier l'utilisateur (sécurité : chaque user a son propre cache)
             if data['username'] != self.username:
+                logger.warning(f"⚠️ Cache invalide : appartient à {data['username']}, pas {self.username}")
                 return False
-            
-            # Vérifier l'âge (7 jours max pour le cache GitHub - très permissif)
+
+            # Vérifier l'âge (12h max pour refresh régulier, équilibre perf/fraîcheur)
             cache_age = time.time() - data['timestamp']
-            max_age = 7 * 24 * 3600  # 7 jours
-            
-            return cache_age < max_age
-            
-        except:
+            max_age = 12 * 3600  # 12 heures (au lieu de 7 jours)
+
+            if cache_age >= max_age:
+                logger.info(f"⚠️ Cache expiré : {cache_age/3600:.1f}h > 12h")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur validation cache : {e}")
             return False
     
     def _should_auto_commit(self) -> bool:
@@ -148,6 +167,32 @@ class GitHubCache:
                 
         except Exception as e:
             logger.warning(f"⚠️ Auto-commit échoué : {e}")
+
+
+    def invalidate_cache(self) -> bool:
+        """Force l'invalidation du cache (force un refresh à la prochaine lecture)"""
+        try:
+            if self.cache_file.exists():
+                # Supprimer le fichier de cache
+                self.cache_file.unlink()
+                logger.info(f"🗑️ Cache invalidé : {self.cache_file}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Erreur invalidation cache : {e}")
+            return False
+
+    def get_cache_age(self) -> float:
+        """Retourne l'âge du cache en heures (ou -1 si pas de cache)"""
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    cache_age = (time.time() - data['timestamp']) / 3600
+                    return cache_age
+        except:
+            pass
+        return -1.0
 
 
 def get_github_cache(username: str) -> GitHubCache:

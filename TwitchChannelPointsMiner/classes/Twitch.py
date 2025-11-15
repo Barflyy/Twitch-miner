@@ -249,23 +249,129 @@ class Twitch(object):
         else:
             return json_response["data"]["user"]["id"]
 
+    def _get_followers_via_helix_api(self):
+        """
+        🚀 NOUVELLE MÉTHODE RAPIDE : API Twitch Helix officielle
+
+        Récupère TOUS les followers via l'API Helix (bien plus rapide que GraphQL)
+        Nécessite TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET en variables d'environnement
+
+        Returns:
+            list: Liste des usernames des streamers suivis, ou None si erreur
+        """
+        client_id = os.getenv("TWITCH_CLIENT_ID")
+        client_secret = os.getenv("TWITCH_CLIENT_SECRET")
+
+        if not client_id or not client_secret:
+            logger.warning("⚠️ TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET requis pour API Helix")
+            logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
+            return None
+
+        try:
+            # 1. Obtenir un access token OAuth (Client Credentials)
+            auth_url = "https://id.twitch.tv/oauth2/token"
+            auth_params = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials"
+            }
+
+            logger.info("🔑 Authentification API Twitch Helix...")
+            auth_response = requests.post(auth_url, params=auth_params, timeout=10)
+            auth_response.raise_for_status()
+            access_token = auth_response.json()["access_token"]
+
+            # 2. Headers pour les requêtes API Helix
+            headers = {
+                "Client-ID": client_id,
+                "Authorization": f"Bearer {access_token}"
+            }
+
+            # 3. Récupérer l'ID utilisateur depuis le username
+            username = self.twitch_login.username
+            user_url = f"https://api.twitch.tv/helix/users?login={username}"
+            user_response = requests.get(user_url, headers=headers, timeout=10)
+            user_response.raise_for_status()
+
+            user_data = user_response.json()["data"]
+            if not user_data:
+                logger.error(f"❌ Utilisateur {username} introuvable sur Twitch")
+                return None
+
+            user_id = user_data[0]["id"]
+            logger.info(f"✅ User ID Twitch: {user_id}")
+
+            # 4. Récupérer tous les followers avec pagination (API Helix)
+            followers = []
+            cursor = None
+            start_time = time.time()
+
+            logger.info("🚀 Chargement des followers via API Twitch Helix (rapide)...")
+
+            while True:
+                # API Helix: Get Followed Channels
+                follows_url = f"https://api.twitch.tv/helix/channels/followed?user_id={user_id}&first=100"
+                if cursor:
+                    follows_url += f"&after={cursor}"
+
+                follows_response = requests.get(follows_url, headers=headers, timeout=10)
+                follows_response.raise_for_status()
+
+                data = follows_response.json()
+
+                # Extraire les noms des streamers (broadcaster_login)
+                batch = [follow["broadcaster_login"].lower() for follow in data.get("data", [])]
+                followers.extend(batch)
+
+                # Progress log
+                elapsed = time.time() - start_time
+                rate = len(followers) / elapsed if elapsed > 0 else 0
+                logger.info(f"📈 {len(followers)} followers chargés ({rate:.1f}/sec)...")
+
+                # Vérifier s'il y a une page suivante
+                cursor = data.get("pagination", {}).get("cursor")
+                if not cursor:
+                    break
+
+            elapsed = time.time() - start_time
+            rate = len(followers) / elapsed if elapsed > 0 else 0
+            logger.info(
+                f"✅ Total: {len(followers)} followers chargés via API Helix en {elapsed:.1f}s ({rate:.1f}/sec)",
+                extra={"emoji": ":rocket:"}
+            )
+
+            return followers
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Erreur API Twitch Helix: {e}")
+            logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
+            return None
+        except KeyError as e:
+            logger.error(f"❌ Erreur parsing réponse API Helix: {e}")
+            logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Erreur inattendue API Helix: {e}")
+            logger.warning("⚠️ Fallback sur méthode GraphQL (plus lente)")
+            return None
+
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
         # 🚀 CACHE GITHUB UNIQUE : Source de vérité absolue
         # Le fichier GitHub followers_data/username_followers.json contient TOUS les follows
-        
+
         # Importer le cache GitHub
         import sys
         sys.path.append(str(Path(__file__).parent.parent.parent))
         from github_cache import get_github_cache
-        
+
         github_cache = get_github_cache(self.twitch_login.username)
-        
+
         # Essayer de charger depuis le cache GitHub
         logger.info("📂 Chargement des followers depuis le cache GitHub...")
         github_followers = github_cache.load_followers()
-        
+
         if github_followers:
             # Filtrer la blacklist
             if blacklist:
@@ -273,51 +379,74 @@ class Twitch(object):
                 github_followers = [f for f in github_followers if f.lower() not in [b.lower() for b in blacklist]]
                 if original_count != len(github_followers):
                     logger.info(f"🚫 {original_count - len(github_followers)} streamer(s) blacklisté(s)")
-            
+
             logger.info(f"📂 Cache GitHub utilisé : {len(github_followers)} followers")
             return github_followers
-        
-        # Charger depuis Twitch API (lent, mais optimisé)
+
+        # 🚀 NOUVELLE MÉTHODE : Essayer l'API Helix d'abord (ultra rapide)
+        logger.info("🚀 Tentative de chargement via API Twitch Helix (rapide)...")
+        helix_followers = self._get_followers_via_helix_api()
+
+        if helix_followers is not None:
+            # API Helix a réussi !
+            follows = helix_followers
+
+            # Sauvegarder sur GitHub (source de vérité unique)
+            try:
+                success = github_cache.save_followers(follows)
+                if success:
+                    logger.info(
+                        f"📂 Followers sauvegardés sur GitHub : {len(follows)} followers",
+                        extra={"emoji": ":file_folder:"}
+                    )
+                else:
+                    logger.warning("⚠️ Échec sauvegarde GitHub (non bloquant)")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur sauvegarde GitHub : {e}")
+
+            return follows
+
+        # Fallback: Charger depuis GraphQL API (lent, mais fiable)
         logger.info(
-            "📥 Chargement des followers depuis Twitch (peut prendre plusieurs minutes)...",
+            "📥 Chargement des followers depuis Twitch GraphQL (peut prendre plusieurs minutes)...",
             extra={"emoji": ":inbox_tray:"}
         )
-        
+
         # Optimisation: Chargement accéléré avec chunks plus gros et progress
         json_data = copy.deepcopy(GQLOperations.ChannelFollows)
         json_data["variables"] = {"limit": 100, "order": str(order)}  # Chunks de 100 au lieu de 20
-        
+
         has_next = True
         last_cursor = ""
         follows = []
         chunk_count = 0
         start_time = time.time()
-        
+
         logger.info("🚀 Chargement optimisé des followers (chunks de 100)...")
-        
+
         while has_next and len(follows) < limit:
             json_data["variables"]["cursor"] = last_cursor
             json_response = self.post_gql_request(json_data)
             chunk_count += 1
-            
+
             try:
                 follows_response = json_response["data"]["user"]["follows"]
                 chunk_follows = []
                 last_cursor = None
-                
+
                 for f in follows_response["edges"]:
                     chunk_follows.append(f["node"]["login"].lower())
                     last_cursor = f["cursor"]
-                
+
                 follows.extend(chunk_follows)
                 has_next = follows_response["pageInfo"]["hasNextPage"]
-                
+
                 # Progress log toutes les 5 requêtes (500 followers)
                 if chunk_count % 5 == 0:
                     elapsed = time.time() - start_time
                     rate = len(follows) / elapsed if elapsed > 0 else 0
                     logger.info(f"📈 {len(follows)} followers chargés ({rate:.1f}/sec)")
-                    
+
             except KeyError as e:
                 logger.error(f"❌ Erreur récupération followers: {e}")
                 logger.error(f"❌ Réponse API: {json_response}")
@@ -326,7 +455,12 @@ class Twitch(object):
                     for error in json_response["errors"]:
                         logger.error(f"❌ Twitch API Error: {error.get('message', 'Unknown error')}")
                 return []
-        
+
+        # DEBUG: Vérifier la liste avant sauvegarde
+        logger.info(f"🔍 DEBUG: Liste follows avant sauvegarde = {len(follows)} items")
+        if follows:
+            logger.info(f"🔍 DEBUG: Premiers 5 follows = {follows[:5]}")
+
         # Sauvegarder sur GitHub (source de vérité unique)
         try:
             success = github_cache.save_followers(follows)
@@ -339,7 +473,7 @@ class Twitch(object):
                 logger.warning("⚠️ Échec sauvegarde GitHub (non bloquant)")
         except Exception as e:
             logger.warning(f"⚠️ Erreur sauvegarde GitHub : {e}")
-        
+
         return follows
 
     def update_raid(self, streamer, raid):
