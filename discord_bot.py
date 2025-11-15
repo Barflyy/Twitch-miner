@@ -1071,7 +1071,16 @@ async def update_channels():
     if USE_PINNED_MESSAGE:
         try:
             if CHANNEL_ID and CHANNEL_ID != 0:
+                # Essayer de trouver le canal de plusieurs façons
                 channel = bot.get_channel(CHANNEL_ID)
+                
+                # Si pas trouvé, chercher dans tous les guilds
+                if not channel:
+                    for guild in bot.guilds:
+                        channel = guild.get_channel(CHANNEL_ID)
+                        if channel:
+                            break
+                
                 if channel:
                     guild = channel.guild
                     
@@ -1084,13 +1093,16 @@ async def update_channels():
                     return  # Ne pas créer de salons individuels
                 else:
                     print(f"⚠️ Canal {CHANNEL_ID} introuvable pour message épinglé")
+                    print(f"💡 Vérifiez que DISCORD_CHANNEL_ID={CHANNEL_ID} est correct et que le bot a accès au canal")
+                    # Ne pas désactiver USE_PINNED_MESSAGE, juste ne pas créer de salons
+                    return
             else:
                 print(f"⚠️ CHANNEL_ID non défini ({CHANNEL_ID}), impossible d'utiliser message épinglé")
         except Exception as e:
-            print(f"⚠️ Erreur système message épinglé, fallback salons individuels : {e}")
+            print(f"⚠️ Erreur système message épinglé : {e}")
             import traceback
             traceback.print_exc()
-            USE_PINNED_MESSAGE = False  # Désactiver si erreur
+            # Ne pas désactiver automatiquement, laisser l'utilisateur décider
     
     # ANCIEN SYSTÈME : Salons individuels (fallback)
     if not CATEGORY_ID or CATEGORY_ID == 0:
