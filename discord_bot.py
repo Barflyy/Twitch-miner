@@ -889,35 +889,12 @@ async def create_pinned_channel(guild, force_recreate=False):
         category_name = "📺 TWITCH MINER - LISTE"
         channel_name = "📋-liste-streamers"
         
-        # Si force_recreate, supprimer tout d'abord
+        # Si force_recreate, supprimer tout d'abord (sans chercher, on supprime tout ce qui correspond)
         if force_recreate:
             await cleanup_pinned_channel(guild)
-        
-        # Chercher si la catégorie existe déjà
-        category = None
-        for cat in guild.categories:
-            if cat.name == category_name:
-                category = cat
-                break
-        
-        # Si pas trouvée ou force_recreate, créer la catégorie
-        if not category or force_recreate:
-            if category:
-                await category.delete()
+            # Créer directement sans chercher
             print(f"📁 Création de la catégorie : {category_name}")
             category = await guild.create_category(category_name)
-        
-        # Chercher si le canal existe déjà
-        list_channel = None
-        for channel in category.text_channels:
-            if channel.name == channel_name:
-                list_channel = channel
-                break
-        
-        # Si pas trouvé ou force_recreate, créer le canal
-        if not list_channel or force_recreate:
-            if list_channel:
-                await list_channel.delete()
             print(f"📝 Création du canal : {channel_name}")
             # Permissions : @everyone ne peut pas écrire, seulement lire
             overwrites = {
@@ -931,10 +908,33 @@ async def create_pinned_channel(guild, force_recreate=False):
                 channel_name,
                 overwrites=overwrites
             )
+            pinned_list_channel_id = list_channel.id
+            save_channels()
+            return list_channel
         
+        # Sinon, utiliser le canal existant via l'ID sauvegardé (pas de recherche)
+        if pinned_list_channel_id:
+            list_channel = guild.get_channel(pinned_list_channel_id)
+            if list_channel:
+                return list_channel
+        
+        # Si pas d'ID sauvegardé, créer (première fois)
+        print(f"📁 Création de la catégorie : {category_name}")
+        category = await guild.create_category(category_name)
+        print(f"📝 Création du canal : {channel_name}")
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(
+                read_messages=True,
+                send_messages=False,
+                add_reactions=False
+            )
+        }
+        list_channel = await category.create_text_channel(
+            channel_name,
+            overwrites=overwrites
+        )
         pinned_list_channel_id = list_channel.id
         save_channels()
-        
         return list_channel
     
     except Exception as e:
