@@ -998,6 +998,26 @@ class Twitch(object):
                             continue
                         # End of fix for 2024/5 API Change
                         ##################################
+                        # Vérifier que spade_url est défini avant de faire la requête
+                        if not streamers[index].stream.spade_url:
+                            logger.debug(
+                                f"⚠️ spade_url non défini pour {streamers[index]}, récupération..."
+                            )
+                            try:
+                                self.get_spade_url(streamers[index])
+                            except Exception as e:
+                                logger.debug(
+                                    f"⚠️ Impossible de récupérer spade_url pour {streamers[index]}: {e}"
+                                )
+                                continue
+                        
+                        # Vérifier à nouveau après tentative de récupération
+                        if not streamers[index].stream.spade_url:
+                            logger.debug(
+                                f"⚠️ spade_url toujours None pour {streamers[index]}, skip..."
+                            )
+                            continue
+                        
                         response = requests.post(
                             streamers[index].stream.spade_url,
                             data=streamers[index].stream.encode_payload(),
