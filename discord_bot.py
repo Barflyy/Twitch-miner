@@ -698,11 +698,11 @@ async def on_ready():
     load_channels()
     load_data(force=True)  # Force le chargement au démarrage
     
-    # 🆕 NOUVEAU SYSTÈME : Nettoyer et recréer le canal du message épinglé au démarrage
+    # 🆕 NOUVEAU SYSTÈME : Créer le canal du message épinglé au démarrage (supprime et recrée)
     if USE_PINNED_MESSAGE:
         for guild in bot.guilds:
-            print("🧹 Nettoyage et recréation du canal message épinglé...")
-            await cleanup_pinned_channel(guild)
+            print("📁 Création de la catégorie et du canal pour le message épinglé...")
+            await create_pinned_channel(guild, force_recreate=True)
             break  # Prendre le premier guild
     
     # Vérifier qu'on a une catégorie définie (pour l'ancien système de fallback)
@@ -880,14 +880,18 @@ def has_data_changed(streamer, new_data):
     
     return False
 
-async def create_or_get_pinned_channel(guild):
-    """🆕 Crée ou récupère la catégorie et le canal pour le message épinglé"""
+async def create_pinned_channel(guild, force_recreate=False):
+    """🆕 Crée la catégorie et le canal pour le message épinglé (supprime et recrée si force_recreate=True)"""
     global pinned_list_channel_id
     
     try:
         # Nom de la catégorie et du canal
         category_name = "📺 TWITCH MINER - LISTE"
         channel_name = "📋-liste-streamers"
+        
+        # Si force_recreate, supprimer tout d'abord
+        if force_recreate:
+            await cleanup_pinned_channel(guild)
         
         # Chercher si la catégorie existe déjà
         category = None
@@ -896,8 +900,10 @@ async def create_or_get_pinned_channel(guild):
                 category = cat
                 break
         
-        # Si pas trouvée, créer la catégorie
-        if not category:
+        # Si pas trouvée ou force_recreate, créer la catégorie
+        if not category or force_recreate:
+            if category:
+                await category.delete()
             print(f"📁 Création de la catégorie : {category_name}")
             category = await guild.create_category(category_name)
         
@@ -908,8 +914,10 @@ async def create_or_get_pinned_channel(guild):
                 list_channel = channel
                 break
         
-        # Si pas trouvé, créer le canal (en lecture seule pour @everyone)
-        if not list_channel:
+        # Si pas trouvé ou force_recreate, créer le canal
+        if not list_channel or force_recreate:
+            if list_channel:
+                await list_channel.delete()
             print(f"📝 Création du canal : {channel_name}")
             # Permissions : @everyone ne peut pas écrire, seulement lire
             overwrites = {
@@ -923,10 +931,9 @@ async def create_or_get_pinned_channel(guild):
                 channel_name,
                 overwrites=overwrites
             )
-            pinned_list_channel_id = list_channel.id
-            save_channels()
-        else:
-            pinned_list_channel_id = list_channel.id
+        
+        pinned_list_channel_id = list_channel.id
+        save_channels()
         
         return list_channel
     
@@ -984,8 +991,8 @@ async def create_or_update_pinned_list(guild):
     global pinned_list_channel_id, pinned_list_message_id
     
     try:
-        # Créer ou récupérer le canal (le bot le crée automatiquement)
-        list_channel = await create_or_get_pinned_channel(guild)
+        # Créer ou récupérer le canal (le bot le crée automatiquement si nécessaire)
+        list_channel = await create_pinned_channel(guild, force_recreate=False)
         
         if not list_channel:
             print("❌ Impossible de créer/récupérer le canal pour le message épinglé")
