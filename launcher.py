@@ -110,10 +110,13 @@ def main():
     
     # Vérifier les variables d'environnement
     required_vars = {
-        "DISCORD_BOT_TOKEN": "Token du bot Discord",
-        "DISCORD_CHANNEL_ID": "ID du canal Discord",
         "TWITCH_USERNAME": "Username Twitch",
         "TWITCH_AUTH_TOKEN": "Token d'authentification Twitch"
+    }
+    
+    optional_vars = {
+        "DISCORD_BOT_TOKEN": "Token du bot Discord",
+        "DISCORD_CHANNEL_ID": "ID du canal Discord"
     }
     
     missing = []
@@ -121,28 +124,55 @@ def main():
         if not os.getenv(var):
             missing.append(f"  ❌ {var} ({desc})")
     
+    missing_optional = []
+    for var, desc in optional_vars.items():
+        if not os.getenv(var):
+            missing_optional.append(f"  ⚠️  {var} ({desc}) - Optionnel")
+    
     if missing:
-        print("\n⚠️  Variables d'environnement manquantes:", flush=True)
+        print("\n❌ Variables d'environnement OBLIGATOIRES manquantes:", flush=True)
         for m in missing:
             print(m, flush=True)
         platform = "Fly.io" if os.getenv("FLY_APP_NAME") else "Railway"
         print(f"\nConfigurez-les dans {platform} Settings → Variables/Secrets", flush=True)
         sys.exit(1)
     
-    print("\n✅ Toutes les variables sont configurées", flush=True)
-    print(f"✅ Bot Discord: Canal {os.getenv('DISCORD_CHANNEL_ID')}", flush=True)
+    if missing_optional:
+        print("\n⚠️  Variables d'environnement optionnelles manquantes:", flush=True)
+        for m in missing_optional:
+            print(m, flush=True)
+        print("⚠️  Le bot Discord ne démarrera pas, mais le miner continuera", flush=True)
+    
+    print("\n✅ Variables obligatoires configurées", flush=True)
     print(f"✅ Twitch: {os.getenv('TWITCH_USERNAME')}", flush=True)
-    print(f"✅ Mode Bot Discord: {os.getenv('USE_DISCORD_BOT', 'true')}", flush=True)
+    
+    # Lancer le bot Discord seulement si le token est présent
+    discord_token = os.getenv("DISCORD_BOT_TOKEN")
+    if discord_token:
+        print(f"✅ Bot Discord: Canal {os.getenv('DISCORD_CHANNEL_ID', 'N/A')}", flush=True)
+        print(f"✅ Mode Bot Discord: {os.getenv('USE_DISCORD_BOT', 'true')}", flush=True)
+    else:
+        print("⚠️  Bot Discord désactivé (token manquant)", flush=True)
     print(flush=True)
     
-    # Lancer les deux processus en parallèle
-    discord_thread = Thread(target=run_discord_bot, daemon=False, name="Discord-Bot")
-    miner_thread = Thread(target=run_miner, daemon=False, name="Twitch-Miner")
+    # Lancer les processus
+    threads = []
     
-    discord_thread.start()
+    # Bot Discord (optionnel)
+    if discord_token:
+        discord_thread = Thread(target=run_discord_bot, daemon=False, name="Discord-Bot")
+        threads.append(discord_thread)
+        discord_thread.start()
+    
+    # Miner (toujours lancé)
+    miner_thread = Thread(target=run_miner, daemon=False, name="Twitch-Miner")
+    threads.append(miner_thread)
     miner_thread.start()
     
-    print("🔄 Les deux bots sont lancés en parallèle", flush=True)
+    if discord_token:
+        print("🔄 Les deux bots sont lancés en parallèle", flush=True)
+    else:
+        print("🔄 Le miner est lancé (bot Discord désactivé)", flush=True)
     print("📊 Surveillez les logs ci-dessous...", flush=True)
     print("=" * 50, flush=True)
     print(flush=True)
@@ -150,9 +180,9 @@ def main():
     # Attendre que les threads se terminent
     # Utiliser un timeout pour éviter de bloquer indéfiniment
     try:
-        while discord_thread.is_alive() or miner_thread.is_alive():
-            discord_thread.join(timeout=1)
-            miner_thread.join(timeout=1)
+        while any(t.is_alive() for t in threads):
+            for t in threads:
+                t.join(timeout=1)
     except KeyboardInterrupt:
         print("\n🛑 Arrêt demandé...", flush=True)
         sys.exit(0)
