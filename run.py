@@ -104,12 +104,13 @@ if USE_DISCORD_BOT:
     )
     print("✅ Mode Bot Discord activé (fiches éditables, pas de spam webhook)")
 
-# Configuration avec priorités optimisées
+# Configuration avec priorités optimisées et timeouts ajustés
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=auth_token,  # Utilise le token OAuth comme password
     claim_drops_startup=False,
-    # Priorités pour followers
+    enable_analytics=False,  # Désactiver analytics pour économiser mémoire
+    # Priorités optimisées pour followers
     priority=[
         Priority.STREAK,        # Maintenir les streaks
         Priority.DROPS,         # Récupérer les drops
