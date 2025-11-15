@@ -1090,65 +1090,6 @@ async def create_or_update_pinned_list(guild):
                 inline=True
             )
         
-        # Séparateur visuel pour la liste des streamers
-        embed.add_field(
-            name="\u200b",  # Caractère invisible pour séparateur
-            value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 **LISTE DES STREAMERS**",
-            inline=False
-        )
-        
-        # Streamers en ligne (limiter à 25 pour éviter embed trop long)
-        online_list = []
-        for streamer, data in sorted_streamers:
-            if data.get('online', False):
-                balance = data.get('balance', 0)
-                balance_str = f"{balance:,.0f}".replace(',', ' ')
-                session_points = data.get('session_points', 0)
-                if session_points > 0:
-                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts (+{session_points})")
-                else:
-                    online_list.append(f"🟢 **{streamer}** - {balance_str} pts")
-                if len(online_list) >= 25:
-                    online_list.append(f"... et {online_count - 25} autres")
-                    break
-        
-        if online_list:
-            embed.add_field(
-                name=f"🟢 STREAMERS EN LIGNE ({online_count})",
-                value="\n".join(online_list) if len("\n".join(online_list)) < 1024 else "\n".join(online_list[:20]) + f"\n... et {online_count - 20} autres",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🟢 STREAMERS EN LIGNE",
-                value="Aucun streamer en ligne actuellement",
-                inline=False
-            )
-        
-        # Streamers hors ligne (limiter à 25)
-        offline_list = []
-        for streamer, data in sorted_streamers:
-            if not data.get('online', False):
-                balance = data.get('balance', 0)
-                balance_str = f"{balance:,.0f}".replace(',', ' ')
-                offline_list.append(f"🔴 **{streamer}** - {balance_str} pts")
-                if len(offline_list) >= 25:
-                    offline_list.append(f"... et {offline_count - 25} autres")
-                    break
-        
-        if offline_list:
-            embed.add_field(
-                name=f"🔴 STREAMERS HORS LIGNE ({offline_count})",
-                value="\n".join(offline_list) if len("\n".join(offline_list)) < 1024 else "\n".join(offline_list[:20]) + f"\n... et {offline_count - 20} autres",
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="🔴 STREAMERS HORS LIGNE",
-                value="Aucun streamer hors ligne",
-                inline=False
-            )
-        
         embed.set_footer(text="Twitch Channel Points Miner • Statistiques globales • Mise à jour auto toutes les 30s")
         
         # Créer ou mettre à jour le message
@@ -1164,6 +1105,30 @@ async def create_or_update_pinned_list(guild):
                 pinned_list_message_id = message.id
                 pinned_list_channel_id = list_channel.id
                 save_channels()
+                
+                # Supprimer le message système "message épinglé"
+                await asyncio.sleep(1)  # Attendre un peu pour que le message système apparaisse
+                try:
+                    async for msg in list_channel.history(limit=10):
+                        # Chercher les messages système d'épinglage
+                        if msg.type == discord.MessageType.pins_add:
+                            # Vérifier si c'est lié à notre message
+                            if msg.reference and msg.reference.message_id == message.id:
+                                try:
+                                    await msg.delete()
+                                    break
+                                except:
+                                    pass
+                            # Ou chercher par contenu si pas de référence
+                            elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
+                                try:
+                                    await msg.delete()
+                                    break
+                                except:
+                                    pass
+                except:
+                    pass
+                
                 print(f"✅ Nouveau message épinglé créé : {online_count} en ligne, {offline_count} hors ligne")
         else:
             # Créer le message et l'épingler
@@ -1172,6 +1137,30 @@ async def create_or_update_pinned_list(guild):
             pinned_list_message_id = message.id
             pinned_list_channel_id = list_channel.id
             save_channels()
+            
+            # Supprimer le message système "message épinglé"
+            await asyncio.sleep(1)  # Attendre un peu pour que le message système apparaisse
+            try:
+                async for msg in list_channel.history(limit=10):
+                    # Chercher les messages système d'épinglage
+                    if msg.type == discord.MessageType.pins_add:
+                        # Vérifier si c'est lié à notre message
+                        if msg.reference and msg.reference.message_id == message.id:
+                            try:
+                                await msg.delete()
+                                break
+                            except:
+                                pass
+                        # Ou chercher par contenu si pas de référence
+                        elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
+                            try:
+                                await msg.delete()
+                                break
+                            except:
+                                pass
+            except:
+                pass
+            
             print(f"✅ Message épinglé créé : {online_count} en ligne, {offline_count} hors ligne")
     
     except Exception as e:
