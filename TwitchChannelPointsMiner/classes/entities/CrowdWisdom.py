@@ -253,11 +253,14 @@ class CrowdWisdomStrategy:
         # === STRATÉGIE 1: Sharp bettors détectés ===
         if pattern["sharp_signal"].get("detected"):
             sharp_choice = pattern["sharp_signal"]["sharp_choice"]
+            conviction = pattern["conviction_level"]
             return {
                 "choice": sharp_choice - 1,  # Index 0 ou 1
                 "confidence": 0.85,
                 "reason": f"🎯 SHARP SIGNAL: {pattern['sharp_signal'].get('reason', '')}",
-                "amount_multiplier": 1.8  # On mise gros
+                "signal_type": "sharp_signal",
+                "conviction": conviction.get("overall", "medium"),
+                "amount_multiplier": 1.8  # Legacy, non utilisé dans nouveau système
             }
 
         # === STRATÉGIE 2: Strong consensus avec haute conviction ===
