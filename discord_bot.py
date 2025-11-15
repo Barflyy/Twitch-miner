@@ -1056,6 +1056,13 @@ async def create_or_update_pinned_list(guild):
                 inline=False
             )
         
+        # Séparateur visuel
+        embed.add_field(
+            name="\u200b",  # Caractère invisible pour séparateur
+            value="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            inline=False
+        )
+        
         # Streamers en ligne (limiter à 25 pour éviter embed trop long)
         online_list = []
         for streamer, data in sorted_streamers:

@@ -1135,6 +1135,40 @@ class Twitch(object):
             if streamer.settings.community_goals is True:
                 self.contribute_to_community_goals(streamer)
 
+    def check_predictions_available(self, streamer):
+        """Vérifie si les prédictions sont disponibles pour un streamer via l'API Helix"""
+        try:
+            user_token = self.twitch_login.get_auth_token()
+            if not user_token:
+                return None  # Pas de token, on ne peut pas vérifier
+            
+            headers = {
+                "Client-ID": CLIENT_ID,
+                "Authorization": f"Bearer {user_token}"
+            }
+            
+            # Vérifier les prédictions actives pour ce streamer
+            predictions_url = f"https://api.twitch.tv/helix/predictions?broadcaster_id={streamer.channel_id}&first=1"
+            response = requests.get(predictions_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                predictions = data.get("data", [])
+                # Si on peut récupérer les prédictions, elles sont disponibles
+                return True
+            elif response.status_code == 403:
+                # 403 Forbidden peut indiquer des restrictions régionales ou de permissions
+                error_data = response.json()
+                error_message = error_data.get("message", "").lower()
+                if "region" in error_message or "geographic" in error_message or "blocked" in error_message:
+                    return False  # Blocage régional détecté
+                return None  # Autre problème de permissions
+            else:
+                return None  # Erreur inconnue, on ne peut pas déterminer
+        except Exception as e:
+            logger.debug(f"⚠️ Erreur vérification prédictions disponibles pour {streamer.username}: {e}")
+            return None  # En cas d'erreur, on ne peut pas déterminer
+    
     def make_predictions(self, event):
         decision = event.bet.calculate(event.streamer.channel_points)
         # selector_index = 0 if decision["choice"] == "A" else 1
@@ -1146,6 +1180,18 @@ class Twitch(object):
                 "event": Events.BET_GENERAL,
             },
         )
+        
+        # Vérification préventive : vérifier si les prédictions sont disponibles
+        predictions_available = self.check_predictions_available(event.streamer)
+        if predictions_available is False:
+            logger.warning(
+                f"⚠️ Prédictions non disponibles (blocage régional probable) pour {event.streamer.username}",
+                extra={
+                    "emoji": ":no_entry_sign:",
+                    "event": Events.BET_FAILED,
+                },
+            )
+            return  # Ne pas essayer de placer le pari
         if event.status == "ACTIVE":
             skip, compared_value = event.bet.skip()
             if skip is True:
@@ -1191,17 +1237,28 @@ class Twitch(object):
                         and response["data"]["makePrediction"]["error"] is not None
                     ):
                         error_info = response["data"]["makePrediction"]["error"]
-                        error_code = error_info.get("code", "UNKNOWN")
-                        error_message = error_info.get("message", "")
+                        error_code = str(error_info.get("code", "UNKNOWN")).upper()
+                        error_message = str(error_info.get("message", "")).lower()
                         
-                        # Détecter les erreurs de blocage régional
+                        # Détecter les erreurs de blocage régional (codes d'erreur Twitch connus)
+                        # Codes d'erreur possibles pour restrictions géographiques :
+                        # - GEOBLOCKED, REGION_BLOCKED, GEOGRAPHIC_RESTRICTION
+                        # - UNAVAILABLE_IN_REGION, NOT_AVAILABLE_IN_YOUR_REGION
+                        # - PREDICTION_NOT_AVAILABLE (peut être lié à la région)
                         is_region_blocked = (
-                            "REGION" in str(error_code).upper()
-                            or "GEO" in str(error_code).upper()
-                            or "BLOCKED" in str(error_code).upper()
-                            or "region" in str(error_message).lower()
-                            or "blocked" in str(error_message).lower()
-                            or "geographic" in str(error_message).lower()
+                            "REGION" in error_code
+                            or "GEO" in error_code
+                            or "BLOCKED" in error_code
+                            or "RESTRICTION" in error_code
+                            or "UNAVAILABLE" in error_code
+                            or "region" in error_message
+                            or "blocked" in error_message
+                            or "geographic" in error_message
+                            or "geoblocked" in error_message
+                            or "not available in your region" in error_message
+                            or "not available in this region" in error_message
+                            or "geographic restriction" in error_message
+                            or error_code in ["GEOBLOCKED", "REGION_BLOCKED", "GEOGRAPHIC_RESTRICTION", "UNAVAILABLE_IN_REGION"]
                         )
                         
                         if is_region_blocked:

@@ -78,10 +78,28 @@ class TwitchLogin(object):
         post_data = {
             "client_id": self.client_id,
             "scopes": (
-                "channel_read chat:read user_blocks_edit "
-                "user_blocks_read user_follows_edit user_read "
-                "user:read:follows "
-                "channel:read:predictions channel:manage:predictions"
+                # Scopes de base
+                "channel_read chat:read user_read "
+                "user_blocks_edit user_blocks_read user_follows_edit "
+                # Scopes utilisateur
+                "user:read:email user:read:follows user:read:subscriptions "
+                # Scopes channel
+                "channel:read:redemptions channel:manage:redemptions "
+                "channel:read:predictions channel:manage:predictions "
+                "channel:read:subscriptions channel:read:stream_key "
+                "channel:moderate channel:read:moderators channel:manage:moderators "
+                # Scopes chat
+                "chat:edit chat:moderate "
+                # Scopes modération
+                "moderation:read moderation:read:blocked_terms "
+                "moderation:read:chat_settings moderation:read:automod_settings "
+                "moderation:read:banned_users moderation:read:moderators "
+                # Scopes supplémentaires
+                "bits:read channel:read:goals channel:read:hype_train "
+                "channel:read:polls channel:read:vips channel:manage:vips "
+                "whispers:read whispers:edit clips:edit "
+                "analytics:read:extensions analytics:read:games "
+                "user:edit user:read:broadcast user:manage:broadcast"
             )
         }
         # login-fix
