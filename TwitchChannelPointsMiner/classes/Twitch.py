@@ -548,8 +548,8 @@ class Twitch(object):
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
-        # 📂 SOURCE UNIQUE : Le fichier GitHub followers_data/username_followers.json
-        # On utilise UNIQUEMENT ce fichier, plus d'API Helix ou GraphQL
+        # 📂 SOURCE PRINCIPALE : Le fichier GitHub followers_data/username_followers.json
+        # 🔄 FALLBACK : API Helix pour mettre à jour le fichier si nécessaire
 
         # Importer le cache GitHub
         import sys
@@ -558,7 +558,7 @@ class Twitch(object):
 
         github_cache = get_github_cache(self.twitch_login.username)
 
-        # Charger depuis le fichier JSON uniquement
+        # 1. Essayer de charger depuis le fichier JSON (source principale)
         logger.info("📂 Chargement des followers depuis le fichier JSON GitHub...")
         github_followers = github_cache.load_followers()
 
@@ -572,10 +572,36 @@ class Twitch(object):
 
             logger.info(f"✅ {len(github_followers)} followers chargés depuis le fichier JSON")
             return github_followers
+
+        # 2. Si le fichier n'existe pas ou est expiré, utiliser l'API Helix pour le mettre à jour
+        logger.info("🔄 Fichier JSON expiré ou absent, mise à jour via API Helix...")
+        helix_followers = self._get_followers_via_helix_api()
+
+        if helix_followers is not None and len(helix_followers) > 0:
+            # API Helix a réussi, sauvegarder dans le fichier JSON
+            try:
+                success = github_cache.save_followers(helix_followers)
+                if success:
+                    logger.info(
+                        f"📂 Fichier JSON mis à jour : {len(helix_followers)} followers",
+                        extra={"emoji": ":file_folder:"}
+                    )
+                else:
+                    logger.warning("⚠️ Échec sauvegarde fichier JSON (non bloquant)")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur sauvegarde fichier JSON : {e}")
+
+            # Filtrer la blacklist
+            if blacklist:
+                original_count = len(helix_followers)
+                helix_followers = [f for f in helix_followers if f.lower() not in [b.lower() for b in blacklist]]
+                if original_count != len(helix_followers):
+                    logger.info(f"🚫 {original_count - len(helix_followers)} streamer(s) blacklisté(s)")
+
+            return helix_followers
         else:
-            # Si le fichier n'existe pas ou est vide, retourner une liste vide
-            logger.warning("⚠️ Aucun fichier JSON trouvé ou fichier vide")
-            logger.warning("💡 Le fichier doit être créé manuellement ou via un autre processus")
+            # Si l'API Helix échoue aussi, retourner une liste vide
+            logger.error("❌ Impossible de charger les followers (fichier JSON absent et API Helix échouée)")
             return []
 
     def update_raid(self, streamer, raid):
