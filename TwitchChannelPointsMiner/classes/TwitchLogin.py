@@ -88,8 +88,8 @@ class TwitchLogin(object):
                 "channel:read:predictions channel:manage:predictions "
                 "channel:read:subscriptions "
                 "channel:moderate "
-                # Scopes chat
-                "chat:edit chat:moderate "
+                # Scopes chat (chat:moderate n'existe plus, utiliser channel:moderate)
+                "chat:edit "
                 # Scopes modération
                 "moderation:read "
                 "moderator:read:moderators "
