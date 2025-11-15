@@ -252,8 +252,18 @@ class Twitch(object):
     def get_followers(
         self, limit: int = 10000, order: FollowersOrder = FollowersOrder.ASC, blacklist: list = []
     ):
-        # 🚀 CACHE SYSTÈME OPTIMISÉ : Évite de recharger 465+ followers à chaque redémarrage
-        # Persistance garantie entre redéploiements Railway et redémarrages locaux
+        # 🚀 CACHE HYBRIDE : GitHub (permanent) + Local (rapide)
+        # 1. GitHub Cache = persistance absolue via Git commits
+        # 2. Local Cache = accès ultra-rapide
+        
+        # Importer le cache GitHub
+        import sys
+        sys.path.append(str(Path(__file__).parent.parent.parent))
+        from github_cache import get_github_cache
+        
+        github_cache = get_github_cache(self.twitch_login.username)
+        
+        # Cache local pour accès rapide
         if os.getenv("RAILWAY_ENVIRONMENT"):
             # Railway : utiliser le répertoire du projet (persiste avec le code)
             cache_file = Path(f".followers_cache_{self.twitch_login.username}.json")
@@ -303,7 +313,7 @@ class Twitch(object):
                                     )
                             hours_old = cache_age / 3600
                             logger.info(
-                                f"⚡ Cache utilisé : {len(follows)} followers (mis à jour il y a {hours_old:.1f}h)",
+                                f"⚡ Cache local utilisé : {len(follows)} followers (mis à jour il y a {hours_old:.1f}h)",
                                 extra={"emoji": ":zap:"}
                             )
                             return follows
@@ -319,9 +329,37 @@ class Twitch(object):
                 except:
                     pass
             except Exception as e:
-                logger.warning(f"⚠️ Erreur lecture cache : {e}")
+                logger.warning(f"⚠️ Erreur lecture cache local : {e}")
         
-        # Charger depuis Twitch API (lent, ~6min pour 465 followers)
+        # Essayer le cache GitHub si pas de cache local
+        logger.info("🔍 Vérification cache GitHub...")
+        github_followers = github_cache.load_followers()
+        if github_followers:
+            # Filtrer la blacklist
+            if blacklist:
+                original_count = len(github_followers)
+                github_followers = [f for f in github_followers if f.lower() not in [b.lower() for b in blacklist]]
+                if original_count != len(github_followers):
+                    logger.info(f"🚫 {original_count - len(github_followers)} streamer(s) blacklisté(s)")
+            
+            # Recréer le cache local à partir du GitHub
+            try:
+                cache_data = {
+                    'timestamp': time.time(),
+                    'username': self.twitch_login.username,
+                    'followers': github_followers,
+                    'count': len(github_followers),
+                    'version': '3.0'
+                }
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(cache_data, f, indent=2, ensure_ascii=False)
+                logger.info(f"📂 Cache local restauré depuis GitHub : {len(github_followers)} followers")
+            except:
+                pass  # Non bloquant
+                
+            return github_followers
+        
+        # Charger depuis Twitch API (lent, mais optimisé)
         logger.info(
             "📥 Chargement des followers depuis Twitch (peut prendre plusieurs minutes)...",
             extra={"emoji": ":inbox_tray:"}
@@ -390,9 +428,12 @@ class Twitch(object):
             temp_cache_file.replace(cache_file)
             
             logger.info(
-                f"💾 Cache sauvegardé : {len(follows)} followers (valide 24h) → {cache_file}",
+                f"💾 Cache local sauvegardé : {len(follows)} followers (valide 24h) → {cache_file}",
                 extra={"emoji": ":floppy_disk:"}
             )
+            
+            # Sauvegarder aussi sur GitHub (backup permanent)
+            github_cache.save_followers(follows)
         except Exception as e:
             logger.warning(f"⚠️ Erreur sauvegarde cache : {e}")
             # Nettoyer le fichier temporaire en cas d'erreur
