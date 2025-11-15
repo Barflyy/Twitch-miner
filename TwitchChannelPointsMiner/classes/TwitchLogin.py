@@ -372,3 +372,37 @@ class TwitchLogin(object):
 
     def get_auth_token(self):
         return self.get_cookie_value("auth-token")
+    
+    def validate_token_scopes(self):
+        """
+        Vérifie les scopes du token OAuth via l'API Twitch
+        Retourne un dict avec les scopes disponibles et manquants
+        """
+        if not self.token:
+            return None
+        
+        try:
+            response = self.session.get(
+                "https://id.twitch.tv/oauth2/validate",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                scopes = data.get("scopes", [])
+                return {
+                    "valid": True,
+                    "scopes": scopes,
+                    "client_id": data.get("client_id"),
+                    "login": data.get("login"),
+                    "user_id": data.get("user_id")
+                }
+            else:
+                return {
+                    "valid": False,
+                    "error": f"HTTP {response.status_code}",
+                    "scopes": []
+                }
+        except Exception as e:
+            logger.debug(f"Erreur validation scopes token: {e}")
+            return None

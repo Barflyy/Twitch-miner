@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Launcher pour Railway - Lance le Bot Discord et le Miner ensemble
+Launcher pour Railway/Fly.io - Lance le Bot Discord et le Miner ensemble
 """
 
 import subprocess
@@ -101,7 +101,8 @@ def main():
         print("\n⚠️  Variables d'environnement manquantes:", flush=True)
         for m in missing:
             print(m, flush=True)
-        print("\nConfigurez-les dans Railway Settings → Variables", flush=True)
+        platform = "Fly.io" if os.getenv("FLY_APP_NAME") else "Railway"
+        print(f"\nConfigurez-les dans {platform} Settings → Variables/Secrets", flush=True)
         sys.exit(1)
     
     print("\n✅ Toutes les variables sont configurées", flush=True)

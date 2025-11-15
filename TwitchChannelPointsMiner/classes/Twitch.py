@@ -114,6 +114,27 @@ class Twitch(object):
             logger.info("Validating OAuth token...")
             if self.twitch_login.check_login():
                 logger.info(f"✅ OAuth token valid! User ID: {self.twitch_login.user_id}")
+                
+                # Vérifier les scopes du token pour les prédictions
+                scope_validation = self.twitch_login.validate_token_scopes()
+                if scope_validation and scope_validation.get("valid"):
+                    scopes = scope_validation.get("scopes", [])
+                    required_scopes = ["channel:read:predictions", "channel:manage:predictions"]
+                    missing_scopes = [s for s in required_scopes if s not in scopes]
+                    
+                    if missing_scopes:
+                        logger.warning(
+                            f"⚠️ Token OAuth manque des scopes pour les prédictions: {', '.join(missing_scopes)}"
+                        )
+                        logger.warning(
+                            "💡 Pour activer les prédictions, régénérez votre token avec ces scopes:\n"
+                            f"   - channel:read:predictions\n"
+                            f"   - channel:manage:predictions\n"
+                            f"   Sur https://twitchtokengenerator.com/ (Custom Scope Token)"
+                        )
+                    else:
+                        logger.info("✅ Token OAuth a tous les scopes nécessaires pour les prédictions")
+                
                 # Sauvegarder le token dans les cookies pour les prochaines fois
                 self.twitch_login.save_cookies(self.cookies_file)
                 return
@@ -1238,52 +1259,97 @@ class Twitch(object):
                     ):
                         error_info = response["data"]["makePrediction"]["error"]
                         error_code = str(error_info.get("code", "UNKNOWN")).upper()
-                        error_message = str(error_info.get("message", "")).lower()
+                        error_message = str(error_info.get("message", "")).strip()
+                        
+                        # Log full error for debugging if message is empty
+                        if not error_message:
+                            logger.debug(f"Full error response: {error_info}")
+                        
+                        # Normaliser le message pour la comparaison (lowercase)
+                        error_message_lower = error_message.lower() if error_message else ""
                         
                         # Détecter les erreurs de blocage régional (codes d'erreur Twitch connus)
                         # Codes d'erreur possibles pour restrictions géographiques :
                         # - GEOBLOCKED, REGION_BLOCKED, GEOGRAPHIC_RESTRICTION
                         # - UNAVAILABLE_IN_REGION, NOT_AVAILABLE_IN_YOUR_REGION
                         # - PREDICTION_NOT_AVAILABLE (peut être lié à la région)
+                        # - REGION_LOCKED (nouveau code détecté)
                         is_region_blocked = (
                             "REGION" in error_code
                             or "GEO" in error_code
                             or "BLOCKED" in error_code
                             or "RESTRICTION" in error_code
                             or "UNAVAILABLE" in error_code
-                            or "region" in error_message
-                            or "blocked" in error_message
-                            or "geographic" in error_message
-                            or "geoblocked" in error_message
-                            or "not available in your region" in error_message
-                            or "not available in this region" in error_message
-                            or "geographic restriction" in error_message
-                            or error_code in ["GEOBLOCKED", "REGION_BLOCKED", "GEOGRAPHIC_RESTRICTION", "UNAVAILABLE_IN_REGION"]
+                            or "LOCKED" in error_code
+                            or "region" in error_message_lower
+                            or "blocked" in error_message_lower
+                            or "geographic" in error_message_lower
+                            or "geoblocked" in error_message_lower
+                            or "not available in your region" in error_message_lower
+                            or "not available in this region" in error_message_lower
+                            or "geographic restriction" in error_message_lower
+                            or error_code in ["GEOBLOCKED", "REGION_BLOCKED", "GEOGRAPHIC_RESTRICTION", "UNAVAILABLE_IN_REGION", "REGION_LOCKED"]
                         )
                         
                         if is_region_blocked:
+                            # Message plus informatif si le message d'erreur est vide
+                            if not error_message:
+                                error_display = f"Code: {error_code} (message non fourni par Twitch)"
+                            else:
+                                error_display = f"Code: {error_code}, Message: {error_message}"
+                            
                             logger.error(
-                                f"❌ Blocage régional détecté pour les paris! Code: {error_code}, Message: {error_message}",
+                                f"❌ Blocage régional détecté pour les paris! {error_display}",
                                 extra={
                                     "emoji": ":no_entry_sign:",
                                     "event": Events.BET_FAILED,
                                 },
                             )
+                            
+                            # Vérifier les scopes du token pour diagnostiquer
+                            scope_validation = self.twitch_login.validate_token_scopes()
+                            scope_info = ""
+                            if scope_validation and scope_validation.get("valid"):
+                                scopes = scope_validation.get("scopes", [])
+                                required_scopes = ["channel:read:predictions", "channel:manage:predictions"]
+                                missing_scopes = [s for s in required_scopes if s not in scopes]
+                                
+                                if missing_scopes:
+                                    scope_info = (
+                                        f"\n   ⚠️ PROBLÈME DÉTECTÉ: Votre token OAuth manque les scopes:\n"
+                                        f"      - {', '.join(missing_scopes)}\n"
+                                        f"   → Régénérez votre token sur https://twitchtokengenerator.com/\n"
+                                    )
+                                else:
+                                    scope_info = (
+                                        f"\n   ✅ Votre token OAuth a les bons scopes\n"
+                                        f"   → Le problème vient probablement de la RÉGION du serveur Railway\n"
+                                    )
+                            
                             logger.warning(
                                 "💡 Solutions possibles:\n"
                                 "   1. Vérifiez que votre token OAuth contient les scopes:\n"
                                 "      - channel:read:predictions\n"
                                 "      - channel:manage:predictions\n"
-                                "   2. Les prédictions peuvent être bloquées dans votre région par Twitch\n"
-                                "   3. Vérifiez votre localisation et les restrictions géographiques",
+                                "   2. Si vous utilisez Railway, le serveur peut être dans une région bloquée\n"
+                                "      → Solution: Utilisez un VPN ou changez la région Railway (si possible)\n"
+                                "   3. Les prédictions peuvent être bloquées dans votre région par Twitch\n"
+                                "   4. Certaines régions (ex: certains pays d'Europe) ont des restrictions sur les paris Twitch"
+                                + scope_info,
                                 extra={
                                     "emoji": ":bulb:",
                                     "event": Events.BET_FAILED,
                                 },
                             )
                         else:
+                            # Message plus informatif si le message d'erreur est vide
+                            if not error_message:
+                                error_display = f"error code: {error_code} (message non fourni par Twitch)"
+                            else:
+                                error_display = f"error code: {error_code}, message: {error_message}"
+                            
                             logger.error(
-                                f"Failed to place bet, error code: {error_code}, message: {error_message}",
+                                f"Failed to place bet, {error_display}",
                                 extra={
                                     "emoji": ":four_leaf_clover:",
                                     "event": Events.BET_FAILED,
