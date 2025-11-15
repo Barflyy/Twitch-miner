@@ -46,7 +46,26 @@ else:
                 except Exception as e:
                     print(f"⚠️ Erreur suppression: {e}")
 
-# Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
+# Mode LISTE MANUELLE : Utilise le fichier JSON avec les streamers
+# OU Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
+streamers_list_file = Path("streamers_list.json")
+streamers_manual = []
+
+if streamers_list_file.exists():
+    with open(streamers_list_file, 'r') as f:
+        streamers_manual = json.load(f)
+    if isinstance(streamers_manual, list) and len(streamers_manual) > 0:
+        print(f"📋 Liste manuelle chargée : {len(streamers_manual)} streamer(s)")
+        print(f"📋 Streamers : {', '.join(streamers_manual[:10])}{'...' if len(streamers_manual) > 10 else ''}")
+        USE_FOLLOWERS = False
+    else:
+        print("⚠️ Fichier streamers_list.json vide ou invalide")
+        USE_FOLLOWERS = True
+else:
+    print("📋 Aucun fichier streamers_list.json trouvé")
+    print("💡 Créez streamers_list.json avec vos streamers OU utilisez le mode FOLLOWERS")
+    USE_FOLLOWERS = True
+
 # Blacklist optionnelle : streamers à exclure
 blacklist_file = Path("blacklist.json")
 if blacklist_file.exists():
@@ -149,21 +168,39 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Mode FOLLOWERS : Mining automatique de tous vos follows Twitch
-print("🚀 Démarrage du mining en mode FOLLOWERS...")
-print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
-if blacklist:
-    print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
-
+# Mode LISTE MANUELLE ou FOLLOWERS
+if USE_FOLLOWERS:
+    print("🚀 Démarrage du mining en mode FOLLOWERS...")
+    print("📋 Le bot va suivre automatiquement TOUS vos follows Twitch")
+    if blacklist:
+        print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
+else:
+    print("🚀 Démarrage du mining en mode LISTE MANUELLE...")
+    print(f"📋 Le bot va miner {len(streamers_manual)} streamer(s) de votre liste")
+    if blacklist:
+        print(f"🚫 Blacklist active : {len(blacklist)} streamer(s) exclus")
 
 try:
-    # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
-    # Les streamers dans blacklist.json seront exclus
-    twitch_miner.mine(
-        streamers=[],  # Liste vide = utilise followers
-        blacklist=blacklist,  # Streamers à exclure
-        followers=True  # Active le mode followers automatique
-    )
+    if USE_FOLLOWERS:
+        # Mode FOLLOWERS : Suit automatiquement tous vos follows Twitch
+        # Les streamers dans blacklist.json seront exclus
+        twitch_miner.mine(
+            streamers=[],  # Liste vide = utilise followers
+            blacklist=blacklist,  # Streamers à exclure
+            followers=True  # Active le mode followers automatique
+        )
+    else:
+        # Mode LISTE MANUELLE : Utilise uniquement les streamers du fichier JSON
+        # Filtrer la blacklist
+        streamers_filtered = [s for s in streamers_manual if s.lower() not in [b.lower() for b in blacklist]]
+        if len(streamers_filtered) != len(streamers_manual):
+            print(f"🚫 {len(streamers_manual) - len(streamers_filtered)} streamer(s) blacklisté(s)")
+        
+        twitch_miner.mine(
+            streamers=streamers_filtered,  # Liste manuelle de streamers
+            blacklist=blacklist,  # Streamers à exclure
+            followers=False  # Désactive le mode followers automatique
+        )
         
 except KeyboardInterrupt:
     print("\n⏹️ Arrêt...")
