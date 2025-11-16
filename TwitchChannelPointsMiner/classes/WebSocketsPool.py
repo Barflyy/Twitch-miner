@@ -441,6 +441,12 @@ class WebSocketsPool:
                             and event_id in ws.events_predictions
                         ):
                             ws.events_predictions[event_id].status = event_status
+                            
+                            # Si la prédiction est fermée, arrête le monitoring
+                            if event_status != "ACTIVE":
+                                if ws.parent_pool.smart_bet_timing is not None:
+                                    ws.parent_pool.smart_bet_timing.stop_monitoring(event_id)
+                            
                             # Game over we can't update anymore the values... The bet was placed!
                             if (
                                 ws.events_predictions[event_id].bet_placed is False
