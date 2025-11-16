@@ -97,6 +97,25 @@ class DiscordBotLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         """Appelé par le système de logging."""
         try:
+            # Filtre les logs verbeux inutiles
+            message = self.format(record)
+
+            # Liste des patterns à ignorer (logs de progression, spam, etc.)
+            ignore_patterns = [
+                "📊",  # Logs de progression
+                "streamers chargés",
+                "channel points chargés",
+                "min restantes",
+                "Please wait",
+                "Loading data for",
+                "Saving cookies to your computer",
+                "Hurry up! It will expire",
+            ]
+
+            # Ignorer si le message contient un pattern
+            if any(pattern in message for pattern in ignore_patterns):
+                return
+
             # Détermine le niveau Discord
             if record.levelno >= logging.ERROR:
                 level = 'error'
@@ -104,9 +123,6 @@ class DiscordBotLogHandler(logging.Handler):
                 level = 'warning'
             else:
                 level = 'info'
-
-            # Formate le message
-            message = self.format(record)
 
             # Ajoute au fichier partagé
             self.shared_queue.add_log(

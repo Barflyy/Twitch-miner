@@ -845,9 +845,9 @@ async def process_log_queue():
             else:
                 title = f"{emoji} {level.upper()} ({len(logs)} logs)"
 
-            # Description : combine les messages
+            # Description : combine les messages (MAX 5 logs par embed pour lisibilité)
             description_lines = []
-            for log in logs[:10]:  # Max 10 logs par embed
+            for log in logs[:5]:  # ⚡ MAX 5 logs au lieu de 10
                 timestamp = log['timestamp'].strftime('%H:%M:%S')
                 module = log.get('module', '')
                 func = log.get('func', '')
@@ -861,6 +861,10 @@ async def process_log_queue():
                     description_lines.append(f"`{timestamp}` **{module}.{func}**\n{msg}")
                 else:
                     description_lines.append(f"`{timestamp}` {msg}")
+
+            # Ajouter une note si plus de 5 logs
+            if len(logs) > 5:
+                description_lines.append(f"\n_... et {len(logs) - 5} autres logs similaires_")
 
             description = "\n\n".join(description_lines)
 
