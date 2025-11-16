@@ -232,11 +232,22 @@ class Twitch(object):
             GQLOperations.VideoPlayerStreamInfoOverlayChannel)
         json_data["variables"] = {"channel": streamer.username}
         response = self.post_gql_request(json_data)
-        if response != {}:
-            if response["data"]["user"]["stream"] is None:
-                raise StreamerIsOfflineException
-            else:
-                return response["data"]["user"]
+
+        # Protection contre les réponses None ou malformées
+        if response is None or response == {}:
+            raise StreamerIsOfflineException
+
+        # Vérifier que la structure de données existe
+        if "data" not in response or response["data"] is None:
+            raise StreamerIsOfflineException
+
+        if "user" not in response["data"] or response["data"]["user"] is None:
+            raise StreamerIsOfflineException
+
+        if response["data"]["user"]["stream"] is None:
+            raise StreamerIsOfflineException
+
+        return response["data"]["user"]
 
     def check_streamer_online(self, streamer):
         if time.time() < streamer.offline_at + 60:

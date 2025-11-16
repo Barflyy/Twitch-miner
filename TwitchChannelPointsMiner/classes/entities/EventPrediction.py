@@ -20,6 +20,7 @@ class EventPrediction(object):
         "bet",
         "optimal_timing_system",  # Système de timing optimal (optionnel)
         "prediction_start_time",  # Timestamp de début pour tracking
+        "_data_quality_multiplier",  # Data quality score de SmartBetTiming V2
     ]
 
     def __init__(
