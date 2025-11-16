@@ -51,6 +51,15 @@ pinned_list_channel_id = None  # ID du salon pour le message épinglé
 pinned_list_message_id = None  # ID du message épinglé qui liste tous les streamers
 USE_PINNED_MESSAGE = True  # Activer le système de message épinglé (au lieu de salons individuels)
 
+# 📊 SYSTÈME DE LOGS DISCORD
+log_channels = {
+    'error': None,    # ID du salon #🔴-errors
+    'warning': None,  # ID du salon #⚠️-warnings
+    'info': None,     # ID du salon #ℹ️-infos
+}
+log_category_id = None  # ID de la catégorie "📊 Administration"
+log_queue = asyncio.Queue()  # File d'attente des logs à envoyer
+
 def get_cache_file_path():
     """Retourne le chemin du fichier de cache (persiste sur Fly.io et local)"""
     # Sur Fly.io et local, sauvegarder dans le répertoire du projet
@@ -102,7 +111,9 @@ def save_channels():
             'online_count_message_id': online_count_message_id,
             'followers_count_message_id': followers_count_message_id,
             'pinned_list_channel_id': pinned_list_channel_id,
-            'pinned_list_message_id': pinned_list_message_id
+            'pinned_list_message_id': pinned_list_message_id,
+            'log_channels': log_channels,  # 📊 Salons de logs
+            'log_category_id': log_category_id
         }
         with open('streamer_channels.json', 'w') as f:
             json.dump(data, f)
@@ -115,6 +126,7 @@ def load_channels():
     global online_count_channel_id, followers_count_channel_id
     global online_count_message_id, followers_count_message_id
     global pinned_list_channel_id, pinned_list_message_id
+    global log_channels, log_category_id  # 📊 Salons de logs
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
@@ -130,6 +142,11 @@ def load_channels():
                 followers_count_message_id = data.get('followers_count_message_id')
                 pinned_list_channel_id = data.get('pinned_list_channel_id')
                 pinned_list_message_id = data.get('pinned_list_message_id')
+                # 📊 Charger les salons de logs
+                loaded_log_channels = data.get('log_channels', {})
+                if loaded_log_channels:
+                    log_channels.update(loaded_log_channels)
+                log_category_id = data.get('log_category_id')
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
         streamer_channels = {}
@@ -686,6 +703,203 @@ async def update_stats_channels(guild):
         import traceback
         traceback.print_exc()
 
+# ═══════════════════════════════════════════════════════════════════
+# 📊 SYSTÈME DE LOGS DISCORD
+# ═══════════════════════════════════════════════════════════════════
+
+async def create_log_channels(guild):
+    """Crée automatiquement la catégorie 'Administration' et les 3 salons de logs"""
+    global log_category_id, log_channels
+
+    try:
+        category_name = "📊 Administration"
+
+        # Chercher si la catégorie existe déjà
+        category = None
+        for cat in guild.categories:
+            if cat.name == category_name:
+                category = cat
+                log_category_id = cat.id
+                print(f"✅ Catégorie {category_name} trouvée")
+                break
+
+        # Créer la catégorie si elle n'existe pas
+        if not category:
+            print(f"📁 Création de la catégorie {category_name}...")
+            category = await guild.create_category(category_name)
+            log_category_id = category.id
+            print(f"✅ Catégorie {category_name} créée")
+
+        # Configuration des salons
+        channels_config = [
+            {
+                "name": "🔴-errors",
+                "topic": "Logs d'erreurs critiques du Twitch Miner",
+                "key": "error"
+            },
+            {
+                "name": "⚠️-warnings",
+                "topic": "Logs d'avertissements du Twitch Miner",
+                "key": "warning"
+            },
+            {
+                "name": "ℹ️-infos",
+                "topic": "Logs d'informations du Twitch Miner",
+                "key": "info"
+            }
+        ]
+
+        # Créer ou récupérer chaque salon
+        for config in channels_config:
+            channel_name = config["name"]
+            topic = config["topic"]
+            key = config["key"]
+
+            # Chercher si le salon existe déjà dans la catégorie
+            channel = discord.utils.get(category.channels, name=channel_name)
+
+            if not channel:
+                print(f"📝 Création du salon {channel_name}...")
+                channel = await guild.create_text_channel(
+                    name=channel_name,
+                    category=category,
+                    topic=topic
+                )
+                print(f"✅ Salon {channel_name} créé")
+            else:
+                print(f"✅ Salon {channel_name} existant trouvé")
+
+            log_channels[key] = channel.id
+
+        save_channels()
+        print("✅ Salons de logs configurés et sauvegardés")
+        return True
+
+    except Exception as e:
+        print(f"❌ Erreur création salons de logs: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+async def send_log(level: str, title: str, message: str, module: str = "", func: str = ""):
+    """
+    Envoie un log vers Discord (appelé par DiscordLogHandler)
+
+    Args:
+        level: 'error', 'warning', ou 'info'
+        title: Titre du log
+        message: Contenu du log
+        module: Nom du module (optionnel)
+        func: Nom de la fonction (optionnel)
+    """
+    try:
+        # Ajouter à la queue
+        await log_queue.put({
+            'level': level,
+            'title': title,
+            'message': message,
+            'module': module,
+            'func': func,
+            'timestamp': datetime.utcnow()
+        })
+    except Exception as e:
+        print(f"❌ Erreur ajout log à la queue: {e}")
+
+@tasks.loop(seconds=3)
+async def process_log_queue():
+    """Traite la queue des logs et les envoie vers Discord (batching automatique)"""
+    if log_queue.empty():
+        return
+
+    # Récupérer les logs de la queue (max 10 par batch)
+    logs_to_send = {'error': [], 'warning': [], 'info': []}
+
+    for _ in range(10):
+        if log_queue.empty():
+            break
+        try:
+            log_entry = await asyncio.wait_for(log_queue.get(), timeout=0.1)
+            level = log_entry['level']
+            if level in logs_to_send:
+                logs_to_send[level].append(log_entry)
+        except asyncio.TimeoutError:
+            break
+        except Exception as e:
+            print(f"❌ Erreur récupération log de la queue: {e}")
+            break
+
+    # Envoyer les logs groupés par niveau
+    for level, logs in logs_to_send.items():
+        if not logs:
+            continue
+
+        channel_id = log_channels.get(level)
+        if not channel_id:
+            continue
+
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            continue
+
+        # Créer l'embed
+        color_map = {
+            'error': 0xFF0000,    # Rouge
+            'warning': 0xFFA500,  # Orange
+            'info': 0x00FF00,     # Vert
+        }
+        emoji_map = {
+            'error': '❌',
+            'warning': '⚠️',
+            'info': 'ℹ️',
+        }
+
+        color = color_map.get(level, 0x808080)
+        emoji = emoji_map.get(level, '📝')
+
+        # Titre
+        if len(logs) == 1:
+            title = f"{emoji} {level.upper()}"
+        else:
+            title = f"{emoji} {level.upper()} ({len(logs)} logs)"
+
+        # Description : combine les messages
+        description_lines = []
+        for log in logs[:10]:  # Max 10 logs par embed
+            timestamp = log['timestamp'].strftime('%H:%M:%S')
+            module = log.get('module', '')
+            func = log.get('func', '')
+            msg = log.get('message', '')
+
+            # Tronque le message si trop long
+            if len(msg) > 200:
+                msg = msg[:197] + "..."
+
+            if module and func:
+                description_lines.append(f"`{timestamp}` **{module}.{func}**\n{msg}")
+            else:
+                description_lines.append(f"`{timestamp}` {msg}")
+
+        description = "\n\n".join(description_lines)
+
+        # Limite Discord : 4096 caractères
+        if len(description) > 4000:
+            description = description[:3997] + "..."
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+            timestamp=datetime.utcnow()
+        )
+        embed.set_footer(text=f"Twitch Miner • {len(logs)} event(s)")
+
+        try:
+            await channel.send(embed=embed)
+        except Exception as e:
+            print(f"❌ Erreur envoi log vers Discord ({level}): {e}")
+
+# ═══════════════════════════════════════════════════════════════════
+
 @bot.event
 async def on_ready():
     global bot_start_time, pinned_list_channel_id, pinned_list_message_id
@@ -703,6 +917,11 @@ async def on_ready():
         for guild in bot.guilds:
             print("📁 Création de la catégorie et du canal pour le message épinglé...")
             await create_pinned_channel(guild, force_recreate=True)
+
+            # 📊 Créer les salons de logs automatiquement
+            print("📊 Création des salons de logs Discord...")
+            await create_log_channels(guild)
+
             break  # Prendre le premier guild
     
     # Vérifier qu'on a une catégorie définie (pour l'ancien système de fallback)
@@ -722,7 +941,20 @@ async def on_ready():
     # Démarrer la boucle de mise à jour
     if not update_channels.is_running():
         update_channels.start()
-    
+
+    # Démarrer le traitement de la queue des logs
+    if not process_log_queue.is_running():
+        process_log_queue.start()
+        print("📊 Traitement des logs Discord activé (batching 3s)")
+
+    # Configurer le logging Python pour envoyer vers Discord
+    try:
+        from TwitchChannelPointsMiner.classes.DiscordBotLogHandler import setup_discord_bot_logging
+        setup_discord_bot_logging(send_log)
+        print("✅ Logs Python redirigés vers Discord automatiquement")
+    except Exception as e:
+        print(f"⚠️ Erreur configuration logging Discord: {e}")
+
     print("🔄 Mise à jour automatique activée (30 secondes)")
     print("⏳ Attente du premier cycle pour éviter le rate limit...")
 

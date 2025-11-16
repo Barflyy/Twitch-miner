@@ -101,7 +101,6 @@ from TwitchChannelPointsMiner.classes.Settings import Priority, Events
 from TwitchChannelPointsMiner.classes.Discord import Discord
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition
-from TwitchChannelPointsMiner.classes.DiscordLogHandler import setup_discord_logging
 
 print("🔧 Configuration du bot...")
 
@@ -179,29 +178,11 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Configuration du streaming des logs vers Discord
-error_webhook = os.getenv("DISCORD_ERROR_WEBHOOK")
-warning_webhook = os.getenv("DISCORD_WARNING_WEBHOOK")
-info_webhook = os.getenv("DISCORD_INFO_WEBHOOK")
-
-if any([error_webhook, warning_webhook, info_webhook]):
-    try:
-        setup_discord_logging(
-            error_webhook=error_webhook,
-            warning_webhook=warning_webhook,
-            info_webhook=info_webhook
-        )
-        print("✅ Discord log streaming configuré")
-        if error_webhook:
-            print("   └─ 🔴 Errors webhook actif")
-        if warning_webhook:
-            print("   └─ ⚠️ Warnings webhook actif")
-        if info_webhook:
-            print("   └─ ℹ️ Infos webhook actif")
-    except Exception as e:
-        print(f"⚠️ Erreur configuration Discord logs: {e}")
-else:
-    print("💡 Discord log streaming désactivé (webhooks non configurés)")
+# Les logs sont automatiquement envoyés vers Discord par le bot Discord
+# Le bot crée automatiquement :
+# - Catégorie "📊 Administration"
+# - Salons : 🔴-errors, ⚠️-warnings, ℹ️-infos
+# Pas besoin de configuration webhook ici, le bot gère tout !
 
 # Mode FICHIER JSON ou FOLLOWERS
 if USE_FOLLOWERS:
