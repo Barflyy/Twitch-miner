@@ -1170,29 +1170,46 @@ class Twitch(object):
         json_data["variables"] = {"channelLogin": streamer.username}
 
         response = self.post_gql_request(json_data)
-        if response != {}:
-            if response["data"]["community"] is None:
-                raise StreamerDoesNotExistException
-            channel = response["data"]["community"]["channel"]
-            community_points = channel["self"]["communityPoints"]
-            streamer.channel_points = community_points["balance"]
-            streamer.activeMultipliers = community_points["activeMultipliers"]
 
-            if streamer.settings.community_goals is True:
-                streamer.community_goals = {
-                    goal["id"]: CommunityGoal.from_gql(goal)
-                    for goal in channel["communityPointsSettings"]["goals"]
-                }
+        # Protection contre response None ou malformée
+        if response is None or response == {}:
+            return
 
-            if community_points["availableClaim"] is not None:
-                self.claim_bonus(
-                    streamer, community_points["availableClaim"]["id"])
+        if "data" not in response or response["data"] is None:
+            return
 
-            if streamer.settings.community_goals is True:
-                self.contribute_to_community_goals(streamer)
+        if "community" not in response["data"] or response["data"]["community"] is None:
+            raise StreamerDoesNotExistException
 
-            if streamer.settings.community_goals is True:
-                self.contribute_to_community_goals(streamer)
+        channel = response["data"]["community"].get("channel")
+        if channel is None:
+            return
+
+        # Vérifier que self et communityPoints existent
+        if "self" not in channel or channel["self"] is None:
+            return
+
+        if "communityPoints" not in channel["self"] or channel["self"]["communityPoints"] is None:
+            return
+
+        community_points = channel["self"]["communityPoints"]
+        streamer.channel_points = community_points.get("balance", 0)
+        streamer.activeMultipliers = community_points.get("activeMultipliers", [])
+
+        if streamer.settings.community_goals is True:
+            if "communityPointsSettings" in channel and channel["communityPointsSettings"] is not None:
+                if "goals" in channel["communityPointsSettings"]:
+                    streamer.community_goals = {
+                        goal["id"]: CommunityGoal.from_gql(goal)
+                        for goal in channel["communityPointsSettings"]["goals"]
+                    }
+
+        if community_points.get("availableClaim") is not None:
+            self.claim_bonus(
+                streamer, community_points["availableClaim"]["id"])
+
+        if streamer.settings.community_goals is True:
+            self.contribute_to_community_goals(streamer)
 
     def check_predictions_available(self, streamer):
         """
