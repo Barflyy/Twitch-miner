@@ -1533,15 +1533,24 @@ class Twitch(object):
         json_data["variables"] = {"channelID": streamer.channel_id}
         response = self.post_gql_request(json_data)
         try:
-            return (
-                []
-                if response["data"]["channel"]["viewerDropCampaigns"] is None
-                else [
-                    item["id"]
-                    for item in response["data"]["channel"]["viewerDropCampaigns"]
-                ]
-            )
-        except (ValueError, KeyError):
+            # Protection contre response None ou malformée
+            if response is None or response == {}:
+                return []
+
+            if "data" not in response or response["data"] is None:
+                return []
+
+            if "channel" not in response["data"] or response["data"]["channel"] is None:
+                return []
+
+            if response["data"]["channel"]["viewerDropCampaigns"] is None:
+                return []
+
+            return [
+                item["id"]
+                for item in response["data"]["channel"]["viewerDropCampaigns"]
+            ]
+        except (ValueError, KeyError, TypeError):
             return []
 
     def __get_inventory(self):
