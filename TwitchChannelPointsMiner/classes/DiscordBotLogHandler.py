@@ -102,14 +102,48 @@ class DiscordBotLogHandler(logging.Handler):
 
             # Liste des patterns à ignorer (logs de progression, spam, etc.)
             ignore_patterns = [
-                "📊",  # Logs de progression
+                # 🚫 Logs de progression
+                "📊",
                 "streamers chargés",
                 "channel points chargés",
                 "min restantes",
+
+                # 🚫 Messages d'attente et chargement
                 "Please wait",
                 "Loading data for",
                 "Saving cookies to your computer",
                 "Hurry up! It will expire",
+
+                # 🚫 Auth et session
+                "Start session:",
+                "You'll have to login",
+                "Trying the TV login",
+                "Open https://www.twitch.tv/activate",
+                "and enter this code:",
+
+                # 🚫 Données de chargement
+                "Streamers passés au miner",
+                "après filtrage blacklist",
+                "Chargement des channel IDs",
+                "channel IDs chargés",
+                "Vérification de l'état en ligne",
+                "bot_data.json mis à jour",
+
+                # 🚫 API et cache
+                "Utilisation API Twitch Helix",
+                "User ID Twitch:",
+                "Chargement des followers via API",
+                "followers chargés",
+                "Total:",
+                "Cache GitHub sauvegardé",
+                "Fichier JSON chargé",
+
+                # 🚫 Système
+                "Système de timing optimal",
+                "SmartBetTiming",
+
+                # 🚫 Streamers inexistants (peu important)
+                "does not exist",
             ]
 
             # Ignorer si le message contient un pattern

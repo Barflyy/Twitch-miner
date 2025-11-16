@@ -824,47 +824,48 @@ async def process_log_queue():
             if not channel:
                 continue
 
-            # Créer l'embed
+            # 🎨 DESIGN AMÉLIORÉ : Couleurs plus modernes
             color_map = {
-                'error': 0xFF0000,    # Rouge
-                'warning': 0xFFA500,  # Orange
-                'info': 0x00FF00,     # Vert
+                'error': 0xE74C3C,    # Rouge moderne (Material Design)
+                'warning': 0xF39C12,  # Orange doré
+                'info': 0x3498DB,     # Bleu moderne (au lieu de vert criard)
             }
             emoji_map = {
-                'error': '❌',
+                'error': '🔴',
                 'warning': '⚠️',
-                'info': 'ℹ️',
+                'info': '🔵',
             }
 
-            color = color_map.get(level, 0x808080)
+            color = color_map.get(level, 0x95A5A6)
             emoji = emoji_map.get(level, '📝')
 
-            # Titre
+            # Titre épuré
             if len(logs) == 1:
                 title = f"{emoji} {level.upper()}"
             else:
-                title = f"{emoji} {level.upper()} ({len(logs)} logs)"
+                title = f"{emoji} {level.upper()}"  # Pas de compteur dans le titre
 
-            # Description : combine les messages (MAX 5 logs par embed pour lisibilité)
+            # Description : combine les messages (MAX 3 logs pour meilleure lisibilité)
             description_lines = []
-            for log in logs[:5]:  # ⚡ MAX 5 logs au lieu de 10
+            for i, log in enumerate(logs[:3], 1):  # ⚡ MAX 3 logs (au lieu de 5)
                 timestamp = log['timestamp'].strftime('%H:%M:%S')
                 module = log.get('module', '')
                 func = log.get('func', '')
                 msg = log.get('message', '')
 
                 # Tronque le message si trop long
-                if len(msg) > 200:
-                    msg = msg[:197] + "..."
+                if len(msg) > 150:
+                    msg = msg[:147] + "..."
 
+                # Format plus propre avec numérotation
                 if module and func:
-                    description_lines.append(f"`{timestamp}` **{module}.{func}**\n{msg}")
+                    description_lines.append(f"**{i}.** `{timestamp}` {module}.{func}\n> {msg}")
                 else:
-                    description_lines.append(f"`{timestamp}` {msg}")
+                    description_lines.append(f"**{i}.** `{timestamp}`\n> {msg}")
 
-            # Ajouter une note si plus de 5 logs
-            if len(logs) > 5:
-                description_lines.append(f"\n_... et {len(logs) - 5} autres logs similaires_")
+            # Ajouter une note si plus de 3 logs
+            if len(logs) > 3:
+                description_lines.append(f"\n_+{len(logs) - 3} autres événements similaires_")
 
             description = "\n\n".join(description_lines)
 
@@ -878,9 +879,22 @@ async def process_log_queue():
                 color=color,
                 timestamp=datetime.utcnow()
             )
-            embed.set_footer(text=f"Twitch Miner • {len(logs)} event(s)")
+            embed.set_footer(
+                text=f"📊 {len(logs)} événement{'s' if len(logs) > 1 else ''}",
+                icon_url="https://static-cdn.jtvnw.net/jtv_user_pictures/8a6381c7-d0c0-4576-b179-38bd5ce1d6af-profile_image-70x70.png"
+            )
 
             try:
+                # 🗑️ NETTOYAGE AUTOMATIQUE : Supprimer les vieux messages (garde seulement les 20 derniers)
+                messages = [msg async for msg in channel.history(limit=50)]
+                if len(messages) > 20:
+                    to_delete = messages[20:]  # Garder les 20 premiers (plus récents)
+                    for old_msg in to_delete:
+                        try:
+                            await old_msg.delete()
+                        except:
+                            pass
+
                 await channel.send(embed=embed)
             except Exception as e:
                 print(f"❌ Erreur envoi log vers Discord ({level}): {e}")
@@ -913,6 +927,20 @@ async def on_ready():
             # 📊 Créer les salons de logs automatiquement
             print("📊 Création des salons de logs Discord...")
             await create_log_channels(guild)
+
+            # 🗑️ CLEAR COMPLET des logs au démarrage
+            print("🗑️ Nettoyage des anciens logs au démarrage...")
+            for level, channel_id in log_channels.items():
+                if channel_id:
+                    channel = bot.get_channel(channel_id)
+                    if channel:
+                        try:
+                            # Supprimer TOUS les messages dans les salons de logs
+                            deleted = await channel.purge(limit=1000)
+                            if deleted:
+                                print(f"   ✅ {len(deleted)} messages supprimés dans #{channel.name}")
+                        except Exception as e:
+                            print(f"   ⚠️ Erreur nettoyage {level}: {e}")
 
             break  # Prendre le premier guild
     
