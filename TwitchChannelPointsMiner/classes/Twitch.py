@@ -1441,10 +1441,14 @@ class Twitch(object):
                                 "   1. Vérifiez que votre token OAuth contient les scopes:\n"
                                 "      - channel:read:predictions\n"
                                 "      - channel:manage:predictions\n"
-                                "   2. Si vous utilisez Railway, le serveur peut être dans une région bloquée\n"
-                                "      → Solution: Utilisez un VPN ou changez la région Railway (si possible)\n"
-                                "   3. Les prédictions peuvent être bloquées dans votre région par Twitch\n"
-                                "   4. Certaines régions (ex: certains pays d'Europe) ont des restrictions sur les paris Twitch"
+                                "   2. 🚨 RÉGION UE (Amsterdam) : Twitch bloque souvent les prédictions dans l'UE\n"
+                                "      → Solution Fly.io: Changez la région dans fly.toml (primary_region)\n"
+                                "      → Régions recommandées: 'iad' (US), 'sin' (Singapour), 'hnd' (Japon)\n"
+                                "      → Command: fly regions set iad\n"
+                                "   3. Si vous utilisez Railway, changez la région du service\n"
+                                "      → Régions recommandées: US (Washington, Oregon)\n"
+                                "   4. Alternative: Utilisez un VPN (mais moins stable pour un serveur)\n"
+                                "   5. Certaines régions (ex: UE) ont des restrictions sur les paris Twitch"
                                 + scope_info,
                                 extra={
                                     "emoji": ":bulb:",

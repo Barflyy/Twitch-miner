@@ -1,5 +1,7 @@
 app = "twitch-miner"
-primary_region = "ams"  # Amsterdam, Pays-Bas (proche de la Belgique)
+primary_region = "iad"  # US - Washington DC (évite les blocages UE)
+# Note: Amsterdam (ams) bloque souvent les prédictions Twitch dans l'UE
+# Autres régions recommandées: iad (US), sin (Singapour), hnd (Japon)
 
 [build]
 
