@@ -853,15 +853,42 @@ async def process_log_queue():
                 func = log.get('func', '')
                 msg = log.get('message', '')
 
-                # Tronque le message si trop long
-                if len(msg) > 150:
-                    msg = msg[:147] + "..."
+                # 🎯 FORMAT AMÉLIORÉ selon le type de message
+                formatted_msg = msg
 
-                # Format plus propre avec numérotation
-                if module and func:
-                    description_lines.append(f"**{i}.** `{timestamp}` {module}.{func}\n> {msg}")
-                else:
-                    description_lines.append(f"**{i}.** `{timestamp}`\n> {msg}")
+                # Format pour les bets (Place X points on...)
+                if "Place" in msg and "channel points on:" in msg:
+                    import re
+                    # Extraire: "Place 1.2k channel points on: ZYLEWR (BLUE), Points: 1M, Users: 41 (74.55%), Odds: 1.08 (92.59%)"
+                    match = re.search(r'Place (.+?) channel points on: (.+?), Points: (.+?), Users: (.+?) \((.+?)%\)', msg)
+                    if match:
+                        amount, choice, total_points, users, percentage = match.groups()
+                        formatted_msg = f"🎲 **Pari placé** : {amount} points\n> Choix: **{choice}**\n> Popularité: {percentage}% ({users} votants)"
+
+                # Format pour les gains (+X → streamer)
+                elif "→" in msg and "Reason:" in msg:
+                    import re
+                    # Extraire: "+10 → Streamer(username=xqc, ...) - Reason: WATCH"
+                    match = re.search(r'([+-]\d+)\s*→\s*Streamer\(username=([^,]+),.+?Reason:\s*(\w+)', msg)
+                    if match:
+                        points, streamer, reason = match.groups()
+                        reason_emoji = {"WATCH": "👁️", "CLAIM": "🎁", "RAID": "⚔️", "WATCH_STREAK": "🔥"}.get(reason, "💰")
+                        formatted_msg = f"{reason_emoji} **{points} points** sur **{streamer}** ({reason.lower()})"
+
+                # Format pour les bonus claims
+                elif "Claiming the bonus" in msg:
+                    import re
+                    match = re.search(r'Streamer\(username=([^,]+),.+?channel_points=([^)]+)\)', msg)
+                    if match:
+                        streamer, points = match.groups()
+                        formatted_msg = f"🎁 **Bonus récupéré** sur **{streamer}** (Total: {points})"
+
+                # Tronque le message si encore trop long
+                if len(formatted_msg) > 250:
+                    formatted_msg = formatted_msg[:247] + "..."
+
+                # Format épuré sans module/func (déjà visible dans le contexte)
+                description_lines.append(f"`{timestamp}` {formatted_msg}")
 
             # Ajouter une note si plus de 3 logs
             if len(logs) > 3:

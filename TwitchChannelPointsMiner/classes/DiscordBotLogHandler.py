@@ -141,9 +141,21 @@ class DiscordBotLogHandler(logging.Handler):
                 # 🚫 Système
                 "Système de timing optimal",
                 "SmartBetTiming",
+                "MONITORING V2 STARTED",
+                "Monitoring adaptatif démarré",
 
                 # 🚫 Streamers inexistants (peu important)
                 "does not exist",
+
+                # 🚫 Online/Offline répétitifs (trop verbeux)
+                "is Online!",
+                "is Offline!",
+                "Join IRC Chat:",
+                "Leave IRC Chat:",
+
+                # 🚫 Bet callbacks techniques
+                "Bet callback appelé",
+                "Going to complete bet for",
             ]
 
             # Ignorer si le message contient un pattern
