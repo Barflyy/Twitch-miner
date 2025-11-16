@@ -2,6 +2,7 @@ from TwitchChannelPointsMiner.classes.entities.Bet import Bet
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
 from TwitchChannelPointsMiner.classes.Settings import Settings
 from TwitchChannelPointsMiner.utils import _millify, float_round
+import time
 
 
 class EventPrediction(object):
@@ -17,6 +18,8 @@ class EventPrediction(object):
         "bet_confirmed",
         "bet_placed",
         "bet",
+        "optimal_timing_system",  # Système de timing optimal (optionnel)
+        "prediction_start_time",  # Timestamp de début pour tracking
     ]
 
     def __init__(
@@ -46,6 +49,10 @@ class EventPrediction(object):
         self.bet._event_title = self.title
         self.bet._streamer_id = str(streamer.channel_id) if hasattr(streamer, 'channel_id') else ""
         self.bet._streamer_name = streamer.username if hasattr(streamer, 'username') else ""
+        
+        # Système de timing optimal (initialisé à None, peut être injecté)
+        self.optimal_timing_system = None
+        self.prediction_start_time = time.time()
 
     def __repr__(self):
         return f"EventPrediction(event_id={self.event_id}, streamer={self.streamer}, title={self.title})"
@@ -67,7 +74,53 @@ class EventPrediction(object):
         """
         Calcule le délai réel avant de placer le bet selon delay_mode et delay
         Retourne le nombre de secondes à attendre avant de placer le bet
+        
+        Si optimal_timing_system est disponible, utilise le système de timing optimal.
+        Sinon, utilise la méthode classique.
         """
+        # Si le système de timing optimal est disponible et les outcomes sont mis à jour, l'utiliser
+        if self.optimal_timing_system is not None and hasattr(self.bet, 'outcomes') and self.bet.outcomes:
+            try:
+                # Prépare les données pour le système optimal
+                prediction_data = {
+                    'id': self.event_id,
+                    'event_id': self.event_id,
+                    'streamer_id': str(self.streamer.channel_id) if hasattr(self.streamer, 'channel_id') else "",
+                    'streamer_name': self.streamer.username if hasattr(self.streamer, 'username') else "",
+                    'outcomes': self.bet.outcomes,
+                    'time_remaining': self.closing_bet_after(timestamp)
+                }
+                
+                # Obtient le timing optimal
+                timing_result = self.optimal_timing_system.get_optimal_bet_timing(
+                    prediction_data=prediction_data,
+                    current_timestamp=timestamp,
+                    announced_duration=self.prediction_window_seconds
+                )
+                
+                if timing_result.get('should_bet_now'):
+                    # Log si nécessaire
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"""
+                    🎯 TIMING OPTIMAL CALCULÉ
+                    ├─ Streamer: {self.streamer.username if hasattr(self.streamer, 'username') else 'N/A'}
+                    ├─ Prédiction: {self.title}
+                    ├─ Stratégie: {timing_result.get('strategy', 'N/A')}
+                    ├─ Raison: {timing_result.get('reason', 'N/A')}
+                    ├─ Confiance: {timing_result.get('confidence', 0):.0%}
+                    └─ Wait time: {timing_result.get('wait_time', 0):.1f}s
+                    """.strip())
+                
+                return float_round(timing_result.get('wait_time', 0))
+                
+            except Exception as e:
+                # En cas d'erreur, fallback vers la méthode classique
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Erreur dans timing optimal, fallback classique: {e}")
+        
+        # Méthode classique (fallback)
         from TwitchChannelPointsMiner.classes.entities.Bet import DelayMode
         
         bet_settings = self.streamer.settings.bet

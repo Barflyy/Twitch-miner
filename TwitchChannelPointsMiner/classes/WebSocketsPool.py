@@ -24,13 +24,24 @@ logger = logging.getLogger(__name__)
 
 
 class WebSocketsPool:
-    __slots__ = ["ws", "twitch", "streamers", "events_predictions"]
+    __slots__ = ["ws", "twitch", "streamers", "events_predictions", "optimal_timing_system"]
 
     def __init__(self, twitch, streamers, events_predictions):
         self.ws = []
         self.twitch = twitch
         self.streamers = streamers
         self.events_predictions = events_predictions
+        
+        # Initialise le système de timing optimal (optionnel)
+        self.optimal_timing_system = None
+        try:
+            from TwitchChannelPointsMiner.classes.entities.OptimalBetTimingSystem import OptimalBetTimingSystem
+            self.optimal_timing_system = OptimalBetTimingSystem()
+            logger.info("✅ Système de timing optimal initialisé")
+        except ImportError as e:
+            logger.debug(f"Système de timing optimal non disponible: {e}")
+        except Exception as e:
+            logger.debug(f"Erreur initialisation timing optimal: {e}")
 
     """
     API Limits
@@ -283,6 +294,10 @@ class WebSocketsPool:
                                     event_status,
                                     event_dict["outcomes"],
                                 )
+                                
+                                # Injecte le système de timing optimal si disponible
+                                if ws.optimal_timing_system is not None:
+                                    event.optimal_timing_system = ws.optimal_timing_system
                                 if (
                                     ws.streamers[streamer_index].is_online
                                     and event.closing_bet_after(current_tmsp) > 0
@@ -392,6 +407,28 @@ class WebSocketsPool:
                                 points = event_prediction.parse_result(
                                     message.data["prediction"]["result"]
                                 )
+                                
+                                # Log les résultats pour l'apprentissage du système de timing optimal
+                                if ws.optimal_timing_system is not None:
+                                    try:
+                                        streamer_id = str(event_prediction.streamer.channel_id) if hasattr(event_prediction.streamer, 'channel_id') else ""
+                                        streamer_name = event_prediction.streamer.username if hasattr(event_prediction.streamer, 'username') else ""
+                                        
+                                        announced_duration = event_prediction.prediction_window_seconds
+                                        actual_duration = (time.time() - event_prediction.prediction_start_time)
+                                        
+                                        ws.optimal_timing_system.log_prediction_result(
+                                            streamer_id=streamer_id,
+                                            streamer_name=streamer_name,
+                                            prediction_id=event_prediction.event_id,
+                                            announced_duration=int(announced_duration),
+                                            actual_duration=int(actual_duration)
+                                        )
+                                        
+                                        # Nettoie les données de la prédiction
+                                        ws.optimal_timing_system.cleanup_prediction(event_prediction.event_id)
+                                    except Exception as e:
+                                        logger.debug(f"Erreur lors du logging des résultats pour timing optimal: {e}")
 
                                 decision = event_prediction.bet.get_decision()
                                 choice = event_prediction.bet.decision["choice"]
