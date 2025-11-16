@@ -1184,7 +1184,14 @@ class Twitch(object):
                 self.contribute_to_community_goals(streamer)
 
     def check_predictions_available(self, streamer):
-        """Vérifie si les prédictions sont disponibles pour un streamer via l'API Helix"""
+        """
+        Vérifie si les prédictions sont disponibles pour un streamer via l'API Helix
+        
+        Returns:
+            True: Prédictions disponibles
+            False: Blocage régional confirmé (ne pas continuer)
+            None: Incertitude (continuer quand même car peut être temporaire)
+        """
         try:
             user_token = self.twitch_login.get_auth_token()
             if not user_token:
@@ -1206,16 +1213,56 @@ class Twitch(object):
                 return True
             elif response.status_code == 403:
                 # 403 Forbidden peut indiquer des restrictions régionales ou de permissions
-                error_data = response.json()
-                error_message = error_data.get("message", "").lower()
-                if "region" in error_message or "geographic" in error_message or "blocked" in error_message:
-                    return False  # Blocage régional détecté
-                return None  # Autre problème de permissions
+                # Ou simplement un rate limit / erreur temporaire
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get("message", "").lower()
+                    
+                    # Ne détecter un blocage régional que si le message est explicite
+                    # Vérifier des termes plus spécifiques pour éviter les faux positifs
+                    explicit_regional_keywords = [
+                        "not available in your region",
+                        "not available in this region",
+                        "geographic restriction",
+                        "region locked",
+                        "blocked in your region",
+                        "unavailable in your geographic"
+                    ]
+                    
+                    # Vérifier si le message contient un terme explicite de blocage régional
+                    is_explicitly_blocked = any(keyword in error_message for keyword in explicit_regional_keywords)
+                    
+                    if is_explicitly_blocked:
+                        # Blocage régional confirmé par message explicite
+                        return False
+                    else:
+                        # 403 mais pas de message explicite de blocage régional
+                        # Peut être rate limit, permissions temporaires, etc.
+                        # On retourne None pour continuer quand même
+                        logger.debug(f"⚠️ 403 reçu mais pas de message explicite de blocage régional pour {streamer.username}: {error_message}")
+                        return None
+                        
+                except (ValueError, KeyError) as e:
+                    # Erreur parsing JSON - ne peut pas déterminer
+                    logger.debug(f"⚠️ Erreur parsing réponse 403 pour {streamer.username}: {e}")
+                    return None
+            elif response.status_code == 429:
+                # Rate limiting - temporaire, continuer
+                logger.debug(f"⚠️ Rate limit détecté pour {streamer.username}, continuer quand même")
+                return None
             else:
-                return None  # Erreur inconnue, on ne peut pas déterminer
+                # Autre erreur - incertitude
+                logger.debug(f"⚠️ Status {response.status_code} pour vérification prédictions {streamer.username}")
+                return None
+        except requests.exceptions.Timeout:
+            logger.debug(f"⚠️ Timeout vérification prédictions pour {streamer.username}")
+            return None  # Timeout = temporaire, continuer
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"⚠️ Erreur réseau vérification prédictions pour {streamer.username}: {e}")
+            return None  # Erreur réseau = temporaire, continuer
         except Exception as e:
             logger.debug(f"⚠️ Erreur vérification prédictions disponibles pour {streamer.username}: {e}")
-            return None  # En cas d'erreur, on ne peut pas déterminer
+            return None  # En cas d'erreur, on ne peut pas déterminer (continuer)
     
     def make_predictions(self, event):
         # Vérifier que l'événement existe toujours et est actif
@@ -1330,21 +1377,28 @@ class Twitch(object):
                         # - UNAVAILABLE_IN_REGION, NOT_AVAILABLE_IN_YOUR_REGION
                         # - PREDICTION_NOT_AVAILABLE (peut être lié à la région)
                         # - REGION_LOCKED (nouveau code détecté)
+                        # Vérifier d'abord le code d'erreur explicite
+                        explicit_region_codes = ["REGION_LOCKED", "REGION_BLOCKED", "GEOBLOCKED", 
+                                                  "GEOGRAPHIC_RESTRICTION", "UNAVAILABLE_IN_REGION"]
+                        
+                        # Vérifier des messages explicites dans le message d'erreur
+                        explicit_region_messages = [
+                            "not available in your region",
+                            "not available in this region",
+                            "geographic restriction",
+                            "region locked",
+                            "blocked in your region"
+                        ]
+                        
+                        # Détecter blocage régional seulement si code explicite OU message explicite
+                        is_code_explicit = error_code in explicit_region_codes or any(code in error_code for code in ["REGION_LOCKED", "REGION_BLOCKED", "GEOBLOCKED"])
+                        is_message_explicit = any(msg in error_message_lower for msg in explicit_region_messages)
+                        
                         is_region_blocked = (
-                            "REGION" in error_code
-                            or "GEO" in error_code
-                            or "BLOCKED" in error_code
-                            or "RESTRICTION" in error_code
-                            or "UNAVAILABLE" in error_code
-                            or "LOCKED" in error_code
-                            or "region" in error_message_lower
-                            or "blocked" in error_message_lower
-                            or "geographic" in error_message_lower
-                            or "geoblocked" in error_message_lower
-                            or "not available in your region" in error_message_lower
-                            or "not available in this region" in error_message_lower
-                            or "geographic restriction" in error_message_lower
-                            or error_code in ["GEOBLOCKED", "REGION_BLOCKED", "GEOGRAPHIC_RESTRICTION", "UNAVAILABLE_IN_REGION", "REGION_LOCKED"]
+                            is_code_explicit or is_message_explicit or
+                            # Fallback pour codes moins explicites mais probablement régionaux
+                            (("REGION" in error_code and "LOCKED" in error_code) or
+                             ("GEO" in error_code and "BLOCKED" in error_code))
                         )
                         
                         if is_region_blocked:
