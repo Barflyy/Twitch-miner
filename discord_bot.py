@@ -58,7 +58,6 @@ log_channels = {
     'info': None,     # ID du salon #ℹ️-infos
 }
 log_category_id = None  # ID de la catégorie "📊 Administration"
-log_queue = asyncio.Queue()  # File d'attente des logs à envoyer
 
 def get_cache_file_path():
     """Retourne le chemin du fichier de cache (persiste sur Fly.io et local)"""
@@ -781,122 +780,111 @@ async def create_log_channels(guild):
         traceback.print_exc()
         return False
 
-async def send_log(level: str, title: str, message: str, module: str = "", func: str = ""):
-    """
-    Envoie un log vers Discord (appelé par DiscordLogHandler)
-
-    Args:
-        level: 'error', 'warning', ou 'info'
-        title: Titre du log
-        message: Contenu du log
-        module: Nom du module (optionnel)
-        func: Nom de la fonction (optionnel)
-    """
-    try:
-        # Ajouter à la queue
-        await log_queue.put({
-            'level': level,
-            'title': title,
-            'message': message,
-            'module': module,
-            'func': func,
-            'timestamp': datetime.utcnow()
-        })
-    except Exception as e:
-        print(f"❌ Erreur ajout log à la queue: {e}")
-
 @tasks.loop(seconds=3)
 async def process_log_queue():
-    """Traite la queue des logs et les envoie vers Discord (batching automatique)"""
-    if log_queue.empty():
-        return
+    """Lit les logs du fichier partagé et les envoie vers Discord."""
+    try:
+        # Importer SharedLogQueue
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from TwitchChannelPointsMiner.classes.DiscordBotLogHandler import SharedLogQueue
 
-    # Récupérer les logs de la queue (max 10 par batch)
-    logs_to_send = {'error': [], 'warning': [], 'info': []}
+        # Lire les logs depuis le fichier partagé
+        shared_queue = SharedLogQueue()
+        logs_from_file = shared_queue.get_logs(clear=True)
 
-    for _ in range(10):
-        if log_queue.empty():
-            break
-        try:
-            log_entry = await asyncio.wait_for(log_queue.get(), timeout=0.1)
-            level = log_entry['level']
+        if not logs_from_file:
+            return
+
+        # Grouper par niveau
+        logs_to_send = {'error': [], 'warning': [], 'info': []}
+
+        for log_entry in logs_from_file:
+            level = log_entry.get('level', 'info')
             if level in logs_to_send:
+                # Convertir timestamp ISO string vers datetime
+                from datetime import datetime
+                try:
+                    log_entry['timestamp'] = datetime.fromisoformat(log_entry['timestamp'])
+                except:
+                    log_entry['timestamp'] = datetime.utcnow()
                 logs_to_send[level].append(log_entry)
-        except asyncio.TimeoutError:
-            break
-        except Exception as e:
-            print(f"❌ Erreur récupération log de la queue: {e}")
-            break
 
-    # Envoyer les logs groupés par niveau
-    for level, logs in logs_to_send.items():
-        if not logs:
-            continue
+        # Envoyer les logs groupés par niveau
+        for level, logs in logs_to_send.items():
+            if not logs:
+                continue
 
-        channel_id = log_channels.get(level)
-        if not channel_id:
-            continue
+            channel_id = log_channels.get(level)
+            if not channel_id:
+                continue
 
-        channel = bot.get_channel(channel_id)
-        if not channel:
-            continue
+            channel = bot.get_channel(channel_id)
+            if not channel:
+                continue
 
-        # Créer l'embed
-        color_map = {
-            'error': 0xFF0000,    # Rouge
-            'warning': 0xFFA500,  # Orange
-            'info': 0x00FF00,     # Vert
-        }
-        emoji_map = {
-            'error': '❌',
-            'warning': '⚠️',
-            'info': 'ℹ️',
-        }
+            # Créer l'embed
+            color_map = {
+                'error': 0xFF0000,    # Rouge
+                'warning': 0xFFA500,  # Orange
+                'info': 0x00FF00,     # Vert
+            }
+            emoji_map = {
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️',
+            }
 
-        color = color_map.get(level, 0x808080)
-        emoji = emoji_map.get(level, '📝')
+            color = color_map.get(level, 0x808080)
+            emoji = emoji_map.get(level, '📝')
 
-        # Titre
-        if len(logs) == 1:
-            title = f"{emoji} {level.upper()}"
-        else:
-            title = f"{emoji} {level.upper()} ({len(logs)} logs)"
-
-        # Description : combine les messages
-        description_lines = []
-        for log in logs[:10]:  # Max 10 logs par embed
-            timestamp = log['timestamp'].strftime('%H:%M:%S')
-            module = log.get('module', '')
-            func = log.get('func', '')
-            msg = log.get('message', '')
-
-            # Tronque le message si trop long
-            if len(msg) > 200:
-                msg = msg[:197] + "..."
-
-            if module and func:
-                description_lines.append(f"`{timestamp}` **{module}.{func}**\n{msg}")
+            # Titre
+            if len(logs) == 1:
+                title = f"{emoji} {level.upper()}"
             else:
-                description_lines.append(f"`{timestamp}` {msg}")
+                title = f"{emoji} {level.upper()} ({len(logs)} logs)"
 
-        description = "\n\n".join(description_lines)
+            # Description : combine les messages
+            description_lines = []
+            for log in logs[:10]:  # Max 10 logs par embed
+                timestamp = log['timestamp'].strftime('%H:%M:%S')
+                module = log.get('module', '')
+                func = log.get('func', '')
+                msg = log.get('message', '')
 
-        # Limite Discord : 4096 caractères
-        if len(description) > 4000:
-            description = description[:3997] + "..."
+                # Tronque le message si trop long
+                if len(msg) > 200:
+                    msg = msg[:197] + "..."
 
-        embed = discord.Embed(
-            title=title,
-            description=description,
-            color=color,
-            timestamp=datetime.utcnow()
-        )
-        embed.set_footer(text=f"Twitch Miner • {len(logs)} event(s)")
+                if module and func:
+                    description_lines.append(f"`{timestamp}` **{module}.{func}**\n{msg}")
+                else:
+                    description_lines.append(f"`{timestamp}` {msg}")
 
-        try:
-            await channel.send(embed=embed)
-        except Exception as e:
-            print(f"❌ Erreur envoi log vers Discord ({level}): {e}")
+            description = "\n\n".join(description_lines)
+
+            # Limite Discord : 4096 caractères
+            if len(description) > 4000:
+                description = description[:3997] + "..."
+
+            embed = discord.Embed(
+                title=title,
+                description=description,
+                color=color,
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text=f"Twitch Miner • {len(logs)} event(s)")
+
+            try:
+                await channel.send(embed=embed)
+            except Exception as e:
+                print(f"❌ Erreur envoi log vers Discord ({level}): {e}")
+
+    except Exception as e:
+        print(f"❌ Erreur process_log_queue: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ═══════════════════════════════════════════════════════════════════
 
@@ -946,14 +934,7 @@ async def on_ready():
     if not process_log_queue.is_running():
         process_log_queue.start()
         print("📊 Traitement des logs Discord activé (batching 3s)")
-
-    # Configurer le logging Python pour envoyer vers Discord
-    try:
-        from TwitchChannelPointsMiner.classes.DiscordBotLogHandler import setup_discord_bot_logging
-        setup_discord_bot_logging(send_log)
-        print("✅ Logs Python redirigés vers Discord automatiquement")
-    except Exception as e:
-        print(f"⚠️ Erreur configuration logging Discord: {e}")
+        print("📁 Le bot lit les logs depuis: discord_logs_queue.json")
 
     print("🔄 Mise à jour automatique activée (30 secondes)")
     print("⏳ Attente du premier cycle pour éviter le rate limit...")

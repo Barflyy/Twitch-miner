@@ -178,11 +178,14 @@ twitch_miner = TwitchChannelPointsMiner(
     )
 )
 
-# Les logs sont automatiquement envoyés vers Discord par le bot Discord
-# Le bot crée automatiquement :
-# - Catégorie "📊 Administration"
-# - Salons : 🔴-errors, ⚠️-warnings, ℹ️-infos
-# Pas besoin de configuration webhook ici, le bot gère tout !
+# Activer le logging vers Discord via fichier partagé
+# Le bot Discord lit ce fichier et envoie les logs automatiquement
+try:
+    from TwitchChannelPointsMiner.classes.DiscordBotLogHandler import setup_discord_bot_logging
+    setup_discord_bot_logging()
+    print("✅ Logs redirigés vers Discord (via discord_logs_queue.json)")
+except Exception as e:
+    print(f"⚠️ Erreur configuration logging Discord: {e}")
 
 # Mode FICHIER JSON ou FOLLOWERS
 if USE_FOLLOWERS:
