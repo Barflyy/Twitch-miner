@@ -43,18 +43,14 @@ class WebSocketsPool:
         except Exception as e:
             logger.debug(f"Erreur initialisation timing optimal: {e}")
         
-        # Initialise le système de timing adaptatif (SmartBetTiming)
+        # Initialise le système de timing adaptatif V2 (SmartBetTiming)
         self.smart_bet_timing = None
         try:
             from TwitchChannelPointsMiner.classes.entities.SmartBetTiming import SmartBetTiming
-            # Configuration optimisée : attend 150+ users avant de parier
-            self.smart_bet_timing = SmartBetTiming(
-                min_users_to_bet=150,     # ⬆️ Augmenté de 50 à 150
-                min_total_points=10000,   # ⬆️ Augmenté de 5000 à 10000
-                check_interval=3.0,       # ⬇️ Check plus fréquent (3s au lieu de 5s)
-                fallback_time=20.0        # ⬆️ Plus de temps avant fallback (20s au lieu de 15s)
-            )
-            logger.info("✅ Système de timing adaptatif (SmartBetTiming) initialisé avec min_users=150")
+            # V2 : Adaptatif automatique selon durée de prédiction et profil streamer
+            # Plus besoin de paramètres fixes, tout est calculé dynamiquement
+            self.smart_bet_timing = SmartBetTiming()
+            logger.info("✅ SmartBetTiming V2 initialisé (mode adaptatif automatique)")
         except ImportError as e:
             logger.error(f"❌ ERREUR: SmartBetTiming non disponible (ImportError): {e}")
         except Exception as e:

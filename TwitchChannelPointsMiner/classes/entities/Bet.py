@@ -292,9 +292,9 @@ class Bet(object):
         else:
             return False, 0  # Default don't skip the bet
 
-    def calculate(self, balance: int) -> dict:
+    def calculate(self, balance: int, data_quality_multiplier: float = 1.0) -> dict:
         self.decision = {"choice": None, "amount": 0, "id": None}
-        
+
         # Stratégie ADAPTIVE basée sur le profil du streamer
         if self.settings.strategy == Strategy.ADAPTIVE:
             try:
@@ -327,6 +327,14 @@ class Bet(object):
                     self.decision["amount"] = decision.get("amount", 0)
                     self.decision["id"] = decision.get("id")
                     self.decision["reason"] = decision.get("reason", "Adaptive Strategy")
+
+                    # Applique le data_quality_multiplier (de SmartBetTiming V2)
+                    if data_quality_multiplier != 1.0:
+                        original_amount = self.decision["amount"]
+                        self.decision["amount"] = int(original_amount * data_quality_multiplier)
+                        self.decision["amount"] = max(10, self.decision["amount"])  # Min 10 points
+                        self.decision["reason"] += f" | Data quality: {data_quality_multiplier*100:.0f}%"
+
                     return self.decision
                 else:
                     # Skip le bet si la stratégie retourne None
@@ -372,6 +380,14 @@ class Bet(object):
                     self.decision["id"] = decision.get("id")
                     # Stocker la raison pour le logging
                     self.decision["reason"] = decision.get("reason", "Crowd Wisdom")
+
+                    # Applique le data_quality_multiplier (de SmartBetTiming V2)
+                    if data_quality_multiplier != 1.0:
+                        original_amount = self.decision["amount"]
+                        self.decision["amount"] = int(original_amount * data_quality_multiplier)
+                        self.decision["amount"] = max(10, self.decision["amount"])  # Min 10 points
+                        self.decision["reason"] += f" | Data quality: {data_quality_multiplier*100:.0f}%"
+
                     return self.decision
                 else:
                     # Skip le bet si la stratégie retourne None

@@ -1286,8 +1286,11 @@ class Twitch(object):
                 },
             )
             return
-        
-        decision = event.bet.calculate(event.streamer.channel_points)
+
+        # Récupère le data_quality_multiplier si SmartBetTiming V2 l'a injecté
+        data_quality_multiplier = getattr(event, '_data_quality_multiplier', 1.0)
+
+        decision = event.bet.calculate(event.streamer.channel_points, data_quality_multiplier)
         # selector_index = 0 if decision["choice"] == "A" else 1
 
         # Log avec la raison si disponible (pour CROWD_WISDOM)
