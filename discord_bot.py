@@ -883,6 +883,24 @@ async def process_log_queue():
                         streamer, points = match.groups()
                         formatted_msg = f"🎁 **Bonus récupéré** sur **{streamer}** (Total: {points})"
 
+                # Format pour les codes d'activation TV (CRITIQUE!)
+                elif "Open https://www.twitch.tv/activate" in msg:
+                    formatted_msg = f"🔑 **ACTIVATION REQUISE**\n> Ouvre: https://www.twitch.tv/activate"
+                elif "and enter this code:" in msg:
+                    import re
+                    match = re.search(r'code:\s*([A-Z0-9]+)', msg)
+                    if match:
+                        code = match.group(1)
+                        formatted_msg = f"🔑 **CODE**: `{code}`"
+                    else:
+                        formatted_msg = msg
+                elif "Hurry up! It will expire" in msg:
+                    formatted_msg = f"⏰ **URGENT**: Expire dans 30 minutes !"
+                elif "You'll have to login to Twitch!" in msg:
+                    formatted_msg = f"🔐 **Connexion requise** à Twitch"
+                elif "Trying the TV login method" in msg:
+                    formatted_msg = f"📺 Utilisation de la méthode TV Login..."
+
                 # Tronque le message si encore trop long
                 if len(formatted_msg) > 250:
                     formatted_msg = formatted_msg[:247] + "..."

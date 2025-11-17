@@ -112,14 +112,14 @@ class DiscordBotLogHandler(logging.Handler):
                 "Please wait",
                 "Loading data for",
                 "Saving cookies to your computer",
-                "Hurry up! It will expire",
 
-                # 🚫 Auth et session
+                # 🚫 Auth et session (SAUF codes d'activation qui sont critiques !)
                 "Start session:",
-                "You'll have to login",
-                "Trying the TV login",
-                "Open https://www.twitch.tv/activate",
-                "and enter this code:",
+                # ✅ GARDE: "You'll have to login" (important)
+                # ✅ GARDE: "Trying the TV login" (important)
+                # ✅ GARDE: "Open https://www.twitch.tv/activate" (critique!)
+                # ✅ GARDE: "and enter this code:" (critique!)
+                # ✅ GARDE: "Hurry up! It will expire" (critique!)
 
                 # 🚫 Données de chargement
                 "Streamers passés au miner",
