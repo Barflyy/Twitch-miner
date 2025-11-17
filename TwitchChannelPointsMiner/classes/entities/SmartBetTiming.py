@@ -40,7 +40,7 @@ class PredictionDurationProfile:
                 'min_points': 3000,
                 'fallback_time': 12,
                 'check_interval': 3,
-                'absolute_min_users': 15,
+                'absolute_min_users': 5,  # Réduit pour permettre MOST_VOTED avec peu d'utilisateurs
                 'stability_threshold_pct': 8,  # Plus permissif
                 'growth_threshold': 0.30,  # Accepter croissance plus rapide
             }
@@ -52,7 +52,7 @@ class PredictionDurationProfile:
                 'min_points': 5000,
                 'fallback_time': 20,
                 'check_interval': 4,
-                'absolute_min_users': 25,
+                'absolute_min_users': 5,  # Réduit pour permettre MOST_VOTED avec peu d'utilisateurs
                 'stability_threshold_pct': 6,
                 'growth_threshold': 0.25,
             }
@@ -64,7 +64,7 @@ class PredictionDurationProfile:
                 'min_points': 10000,
                 'fallback_time': 40,
                 'check_interval': 5,
-                'absolute_min_users': 50,
+                'absolute_min_users': 5,  # Réduit pour permettre MOST_VOTED avec peu d'utilisateurs
                 'stability_threshold_pct': 5,
                 'growth_threshold': 0.20,
             }
@@ -76,7 +76,7 @@ class PredictionDurationProfile:
                 'min_points': 15000,
                 'fallback_time': 90,
                 'check_interval': 10,
-                'absolute_min_users': 100,
+                'absolute_min_users': 5,  # Réduit pour permettre MOST_VOTED avec peu d'utilisateurs
                 'stability_threshold_pct': 3,  # Exiger plus de stabilité
                 'growth_threshold': 0.15,
             }
@@ -244,9 +244,9 @@ class SmartBetTiming:
                 if time_remaining <= params['fallback_time'] and snapshot['total_users'] < params['absolute_min_users']:
                     logger.warning(f"""
                     ❌ SKIP PREDICTION (données insuffisantes)
-                    ├─ Users: {snapshot['total_users']} < {params['absolute_min_users']} (seuil absolu)
+                    ├─ Users: {snapshot['total_users']} < {params['absolute_min_users']} (seuil minimal)
                     ├─ Points: {snapshot['total_points']:,}
-                    └─ Raison: Mieux vaut skipper que parier à l'aveugle
+                    └─ Raison: Pas assez de votants pour une décision fiable
                     """.strip())
 
                     with self.lock:
