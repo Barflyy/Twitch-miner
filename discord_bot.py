@@ -51,13 +51,9 @@ pinned_list_channel_id = None  # ID du salon pour le message épinglé
 pinned_list_message_id = None  # ID du message épinglé qui liste tous les streamers
 USE_PINNED_MESSAGE = True  # Activer le système de message épinglé (au lieu de salons individuels)
 
-# 📊 SYSTÈME DE LOGS DISCORD
-log_channels = {
-    'error': None,    # ID du salon #🔴-errors
-    'warning': None,  # ID du salon #⚠️-warnings
-    'info': None,     # ID du salon #ℹ️-infos
-}
-log_category_id = None  # ID de la catégorie "📊 Administration"
+# 📊 SYSTÈME DE LOGS DISCORD (SIMPLIFIÉ)
+log_channel_id = None  # ID du salon unique #💰-gains-et-bets
+log_category_id = None  # ID de la catégorie "💰 Gains"
 
 def get_cache_file_path():
     """Retourne le chemin du fichier de cache (persiste sur Fly.io et local)"""
@@ -111,7 +107,7 @@ def save_channels():
             'followers_count_message_id': followers_count_message_id,
             'pinned_list_channel_id': pinned_list_channel_id,
             'pinned_list_message_id': pinned_list_message_id,
-            'log_channels': log_channels,  # 📊 Salons de logs
+            'log_channel_id': log_channel_id,  # 💰 Salon unique de logs
             'log_category_id': log_category_id
         }
         with open('streamer_channels.json', 'w') as f:
@@ -125,7 +121,7 @@ def load_channels():
     global online_count_channel_id, followers_count_channel_id
     global online_count_message_id, followers_count_message_id
     global pinned_list_channel_id, pinned_list_message_id
-    global log_channels, log_category_id  # 📊 Salons de logs
+    global log_channel_id, log_category_id  # 💰 Salon unique de logs
     try:
         if Path('streamer_channels.json').exists():
             with open('streamer_channels.json', 'r') as f:
@@ -141,10 +137,8 @@ def load_channels():
                 followers_count_message_id = data.get('followers_count_message_id')
                 pinned_list_channel_id = data.get('pinned_list_channel_id')
                 pinned_list_message_id = data.get('pinned_list_message_id')
-                # 📊 Charger les salons de logs
-                loaded_log_channels = data.get('log_channels', {})
-                if loaded_log_channels:
-                    log_channels.update(loaded_log_channels)
+                # 💰 Charger le salon unique de logs
+                log_channel_id = data.get('log_channel_id')
                 log_category_id = data.get('log_category_id')
     except Exception as e:
         print(f"❌ Erreur chargement channels: {e}")
@@ -707,13 +701,23 @@ async def update_stats_channels(guild):
 # ═══════════════════════════════════════════════════════════════════
 
 async def create_log_channels(guild):
-    """Crée automatiquement la catégorie 'Administration' et les 3 salons de logs"""
-    global log_category_id, log_channels
+    """Crée automatiquement la catégorie 'Gains' et le salon unique pour points/bets"""
+    global log_category_id, log_channel_id
 
     try:
-        category_name = "📊 Administration"
+        category_name = "💰 Gains"
 
-        # Chercher si la catégorie existe déjà
+        # Supprimer l'ancienne catégorie "📊 Administration" si elle existe
+        for cat in guild.categories:
+            if cat.name == "📊 Administration":
+                print(f"🗑️ Suppression de l'ancienne catégorie {cat.name}...")
+                for channel in cat.channels:
+                    await channel.delete()
+                await cat.delete()
+                print(f"✅ Ancienne catégorie supprimée")
+                break
+
+        # Chercher si la nouvelle catégorie existe déjà
         category = None
         for cat in guild.categories:
             if cat.name == category_name:
@@ -729,60 +733,39 @@ async def create_log_channels(guild):
             log_category_id = category.id
             print(f"✅ Catégorie {category_name} créée")
 
-        # Configuration des salons
-        channels_config = [
-            {
-                "name": "🔴-errors",
-                "topic": "Logs d'erreurs critiques du Twitch Miner",
-                "key": "error"
-            },
-            {
-                "name": "⚠️-warnings",
-                "topic": "Logs d'avertissements du Twitch Miner",
-                "key": "warning"
-            },
-            {
-                "name": "ℹ️-infos",
-                "topic": "Logs d'informations du Twitch Miner",
-                "key": "info"
-            }
-        ]
+        # Créer ou récupérer le salon unique
+        channel_name = "💰-gains-et-bets"
+        topic = "Points gagnés, bets placés, résultats des paris"
 
-        # Créer ou récupérer chaque salon
-        for config in channels_config:
-            channel_name = config["name"]
-            topic = config["topic"]
-            key = config["key"]
+        # Chercher si le salon existe déjà dans la catégorie
+        channel = discord.utils.get(category.channels, name=channel_name)
 
-            # Chercher si le salon existe déjà dans la catégorie
-            channel = discord.utils.get(category.channels, name=channel_name)
+        if not channel:
+            print(f"📝 Création du salon {channel_name}...")
+            channel = await guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                topic=topic
+            )
+            print(f"✅ Salon {channel_name} créé")
+        else:
+            print(f"✅ Salon {channel_name} existant trouvé")
 
-            if not channel:
-                print(f"📝 Création du salon {channel_name}...")
-                channel = await guild.create_text_channel(
-                    name=channel_name,
-                    category=category,
-                    topic=topic
-                )
-                print(f"✅ Salon {channel_name} créé")
-            else:
-                print(f"✅ Salon {channel_name} existant trouvé")
-
-            log_channels[key] = channel.id
+        log_channel_id = channel.id
 
         save_channels()
-        print("✅ Salons de logs configurés et sauvegardés")
+        print("✅ Salon de logs configuré et sauvegardé")
         return True
 
     except Exception as e:
-        print(f"❌ Erreur création salons de logs: {e}")
+        print(f"❌ Erreur création salon de logs: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 @tasks.loop(seconds=3)
 async def process_log_queue():
-    """Lit les logs du fichier partagé et les envoie vers Discord."""
+    """Lit les logs du fichier partagé et les envoie vers Discord (salon unique)."""
     try:
         # Importer SharedLogQueue
         import sys
@@ -797,60 +780,41 @@ async def process_log_queue():
         if not logs_from_file:
             return
 
-        # Grouper par niveau
-        logs_to_send = {'error': [], 'warning': [], 'info': []}
+        # Vérifier qu'on a un salon configuré
+        if not log_channel_id:
+            return
 
+        channel = bot.get_channel(log_channel_id)
+        if not channel:
+            return
+
+        # Convertir timestamps et trier par type d'événement
+        from datetime import datetime
+        all_logs = []
         for log_entry in logs_from_file:
-            level = log_entry.get('level', 'info')
-            if level in logs_to_send:
-                # Convertir timestamp ISO string vers datetime
-                from datetime import datetime
-                try:
-                    log_entry['timestamp'] = datetime.fromisoformat(log_entry['timestamp'])
-                except:
-                    log_entry['timestamp'] = datetime.utcnow()
-                logs_to_send[level].append(log_entry)
+            try:
+                log_entry['timestamp'] = datetime.fromisoformat(log_entry['timestamp'])
+            except:
+                log_entry['timestamp'] = datetime.utcnow()
+            all_logs.append(log_entry)
 
-        # Envoyer les logs groupés par niveau
-        for level, logs in logs_to_send.items():
-            if not logs:
-                continue
+        if not all_logs:
+            return
 
-            channel_id = log_channels.get(level)
-            if not channel_id:
-                continue
+        # Grouper les logs similaires (MAX 3 par embed)
+        for i in range(0, len(all_logs), 3):
+            batch = all_logs[i:i+3]
 
-            channel = bot.get_channel(channel_id)
-            if not channel:
-                continue
+            # Créer l'embed
+            embed = discord.Embed(
+                color=0x2ECC71,  # Vert moderne (gains/succès)
+                timestamp=datetime.utcnow()
+            )
 
-            # 🎨 DESIGN AMÉLIORÉ : Couleurs plus modernes
-            color_map = {
-                'error': 0xE74C3C,    # Rouge moderne (Material Design)
-                'warning': 0xF39C12,  # Orange doré
-                'info': 0x3498DB,     # Bleu moderne (au lieu de vert criard)
-            }
-            emoji_map = {
-                'error': '🔴',
-                'warning': '⚠️',
-                'info': '🔵',
-            }
-
-            color = color_map.get(level, 0x95A5A6)
-            emoji = emoji_map.get(level, '📝')
-
-            # Titre épuré
-            if len(logs) == 1:
-                title = f"{emoji} {level.upper()}"
-            else:
-                title = f"{emoji} {level.upper()}"  # Pas de compteur dans le titre
-
-            # Description : combine les messages (MAX 3 logs pour meilleure lisibilité)
+            # Description : combine les messages
             description_lines = []
-            for i, log in enumerate(logs[:3], 1):  # ⚡ MAX 3 logs (au lieu de 5)
+            for log in batch:
                 timestamp = log['timestamp'].strftime('%H:%M:%S')
-                module = log.get('module', '')
-                func = log.get('func', '')
                 msg = log.get('message', '')
 
                 # 🎯 FORMAT AMÉLIORÉ selon le type de message
@@ -859,7 +823,6 @@ async def process_log_queue():
                 # Format pour les bets (Place X points on...)
                 if "Place" in msg and "channel points on:" in msg:
                     import re
-                    # Extraire: "Place 1.2k channel points on: ZYLEWR (BLUE), Points: 1M, Users: 41 (74.55%), Odds: 1.08 (92.59%)"
                     match = re.search(r'Place (.+?) channel points on: (.+?), Points: (.+?), Users: (.+?) \((.+?)%\)', msg)
                     if match:
                         amount, choice, total_points, users, percentage = match.groups()
@@ -868,7 +831,6 @@ async def process_log_queue():
                 # Format pour les gains (+X → streamer)
                 elif "→" in msg and "Reason:" in msg:
                     import re
-                    # Extraire: "+10 → Streamer(username=xqc, ...) - Reason: WATCH"
                     match = re.search(r'([+-]\d+)\s*→\s*Streamer\(username=([^,]+),.+?Reason:\s*(\w+)', msg)
                     if match:
                         points, streamer, reason = match.groups()
@@ -905,27 +867,17 @@ async def process_log_queue():
                 if len(formatted_msg) > 250:
                     formatted_msg = formatted_msg[:247] + "..."
 
-                # Format épuré sans module/func (déjà visible dans le contexte)
+                # Format épuré sans module/func
                 description_lines.append(f"`{timestamp}` {formatted_msg}")
 
-            # Ajouter une note si plus de 3 logs
-            if len(logs) > 3:
-                description_lines.append(f"\n_+{len(logs) - 3} autres événements similaires_")
-
-            description = "\n\n".join(description_lines)
+            embed.description = "\n\n".join(description_lines)
 
             # Limite Discord : 4096 caractères
-            if len(description) > 4000:
-                description = description[:3997] + "..."
+            if len(embed.description) > 4000:
+                embed.description = embed.description[:3997] + "..."
 
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=color,
-                timestamp=datetime.utcnow()
-            )
             embed.set_footer(
-                text=f"📊 {len(logs)} événement{'s' if len(logs) > 1 else ''}",
+                text=f"💰 {len(batch)} événement{'s' if len(batch) > 1 else ''}",
                 icon_url="https://static-cdn.jtvnw.net/jtv_user_pictures/8a6381c7-d0c0-4576-b179-38bd5ce1d6af-profile_image-70x70.png"
             )
 
@@ -933,7 +885,7 @@ async def process_log_queue():
                 # 🗑️ NETTOYAGE AUTOMATIQUE : Supprimer les vieux messages (garde seulement les 20 derniers)
                 messages = [msg async for msg in channel.history(limit=50)]
                 if len(messages) > 20:
-                    to_delete = messages[20:]  # Garder les 20 premiers (plus récents)
+                    to_delete = messages[20:]
                     for old_msg in to_delete:
                         try:
                             await old_msg.delete()
@@ -942,7 +894,7 @@ async def process_log_queue():
 
                 await channel.send(embed=embed)
             except Exception as e:
-                print(f"❌ Erreur envoi log vers Discord ({level}): {e}")
+                print(f"❌ Erreur envoi log vers Discord: {e}")
 
     except Exception as e:
         print(f"❌ Erreur process_log_queue: {e}")
@@ -969,23 +921,22 @@ async def on_ready():
             print("📁 Création de la catégorie et du canal pour le message épinglé...")
             await create_pinned_channel(guild, force_recreate=True)
 
-            # 📊 Créer les salons de logs automatiquement
-            print("📊 Création des salons de logs Discord...")
+            # 📊 Créer le salon de logs automatiquement
+            print("💰 Création du salon de gains et bets...")
             await create_log_channels(guild)
 
             # 🗑️ CLEAR COMPLET des logs au démarrage
             print("🗑️ Nettoyage des anciens logs au démarrage...")
-            for level, channel_id in log_channels.items():
-                if channel_id:
-                    channel = bot.get_channel(channel_id)
-                    if channel:
-                        try:
-                            # Supprimer TOUS les messages dans les salons de logs
-                            deleted = await channel.purge(limit=1000)
-                            if deleted:
-                                print(f"   ✅ {len(deleted)} messages supprimés dans #{channel.name}")
-                        except Exception as e:
-                            print(f"   ⚠️ Erreur nettoyage {level}: {e}")
+            if log_channel_id:
+                channel = bot.get_channel(log_channel_id)
+                if channel:
+                    try:
+                        # Supprimer TOUS les messages dans le salon de logs
+                        deleted = await channel.purge(limit=1000)
+                        if deleted:
+                            print(f"   ✅ {len(deleted)} messages supprimés dans #{channel.name}")
+                    except Exception as e:
+                        print(f"   ⚠️ Erreur nettoyage logs: {e}")
 
             break  # Prendre le premier guild
     
