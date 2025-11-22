@@ -1,0 +1,12 @@
+{
+    "name": "twitch-miner-manager",
+    "version": "1.0.0",
+    "scripts": {
+        "deploy": "flyctl deploy",
+        "logs": "flyctl logs",
+        "restart": "flyctl apps restart twitch-miner",
+        "status": "flyctl status",
+        "stop": "flyctl scale count 0",
+        "start": "flyctl scale count 1"
+    }
+}

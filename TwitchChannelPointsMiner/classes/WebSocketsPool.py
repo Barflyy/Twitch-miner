@@ -1,0 +1,665 @@
+import json
+import logging
+import random
+import time
+# import os
+from threading import Thread, Timer
+# from pathlib import Path
+
+from dateutil import parser
+
+from TwitchChannelPointsMiner.classes.entities.CommunityGoal import CommunityGoal
+from TwitchChannelPointsMiner.classes.entities.EventPrediction import EventPrediction
+from TwitchChannelPointsMiner.classes.entities.Message import Message
+from TwitchChannelPointsMiner.classes.entities.Raid import Raid
+from TwitchChannelPointsMiner.classes.Settings import Events, Settings
+from TwitchChannelPointsMiner.classes.TwitchWebSocket import TwitchWebSocket
+from TwitchChannelPointsMiner.constants import WEBSOCKET
+from TwitchChannelPointsMiner.utils import (
+    get_streamer_index,
+    internet_connection_available,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class WebSocketsPool:
+    __slots__ = ["ws", "twitch", "streamers", "events_predictions", "optimal_timing_system", "smart_bet_timing"]
+
+    def __init__(self, twitch, streamers, events_predictions):
+        self.ws = []
+        self.twitch = twitch
+        self.streamers = streamers
+        self.events_predictions = events_predictions
+        
+        # Initialise le système de timing optimal (optionnel)
+        self.optimal_timing_system = None
+        try:
+            from TwitchChannelPointsMiner.classes.entities.OptimalBetTimingSystem import OptimalBetTimingSystem
+            self.optimal_timing_system = OptimalBetTimingSystem()
+            logger.info("✅ Système de timing optimal initialisé")
+        except ImportError as e:
+            logger.debug(f"Système de timing optimal non disponible: {e}")
+        except Exception as e:
+            logger.debug(f"Erreur initialisation timing optimal: {e}")
+        
+        # Initialise le système de timing adaptatif V2 (SmartBetTiming)
+        # 🔧 TEMPORAIREMENT DÉSACTIVÉ pour diagnostiquer les problèmes WebSocket
+        # Le SmartBetTiming crée un thread par prédiction, ce qui peut surcharger les connexions
+        self.smart_bet_timing = None
+        logger.warning("⚠️ SmartBetTiming DÉSACTIVÉ (diagnostic WebSocket) - Utilisation du Timer classique")
+        
+        # try:
+        #     from TwitchChannelPointsMiner.classes.entities.SmartBetTiming import SmartBetTiming
+        #     # V2 : Adaptatif automatique selon durée de prédiction et profil streamer
+        #     # Plus besoin de paramètres fixes, tout est calculé dynamiquement
+        #     self.smart_bet_timing = SmartBetTiming()
+        #     logger.info("✅ SmartBetTiming V2 initialisé (mode adaptatif automatique)")
+        # except ImportError as e:
+        #     logger.error(f"❌ ERREUR: SmartBetTiming non disponible (ImportError): {e}")
+        # except Exception as e:
+        #     logger.error(f"❌ ERREUR: Initialisation SmartBetTiming échouée: {e}", exc_info=True)
+
+    """
+    API Limits
+    - Clients can listen to up to 50 topics per connection. Trying to listen to more topics will result in an error message.
+    - We recommend that a single client IP address establishes no more than 10 simultaneous connections.
+    The two limits above are likely to be relaxed for approved third-party applications, as we start to better understand third-party requirements.
+    """
+
+    def submit(self, topic):
+        # Check if we need to create a new WebSocket instance
+        if self.ws == [] or len(self.ws[-1].topics) >= 50:
+            self.ws.append(self.__new(len(self.ws)))
+            self.__start(-1)
+
+        self.__submit(-1, topic)
+
+    def __submit(self, index, topic):
+        # Topic in topics should never happen. Anyway prevent any types of duplicates
+        if topic not in self.ws[index].topics:
+            self.ws[index].topics.append(topic)
+
+        if self.ws[index].is_opened is False:
+            self.ws[index].pending_topics.append(topic)
+        else:
+            self.ws[index].listen(topic, self.twitch.twitch_login.get_auth_token())
+
+    def __new(self, index):
+        return TwitchWebSocket(
+            index=index,
+            parent_pool=self,
+            url=WEBSOCKET,
+            on_message=WebSocketsPool.on_message,
+            on_open=WebSocketsPool.on_open,
+            on_error=WebSocketsPool.on_error,
+            on_close=WebSocketsPool.on_close
+            # on_close=WebSocketsPool.handle_reconnection, # Do nothing.
+        )
+
+    def __start(self, index):
+        # Stagger WebSocket startups to avoid simultaneous pings
+        # With 40+ connections, starting all at once causes ping storms
+        if index > 0:
+            stagger_delay = min(index * 5, 30)  # Max 30 second stagger
+            logger.info(f"#{index} - Staggering WebSocket start by {stagger_delay}s to reduce network congestion")
+            time.sleep(stagger_delay)
+        
+        if Settings.disable_ssl_cert_verification is True:
+            import ssl
+
+            thread_ws = Thread(
+                target=lambda: self.ws[index].run_forever(
+                    sslopt={"cert_reqs": ssl.CERT_NONE}
+                )
+            )
+            logger.warn("SSL certificate verification is disabled! Be aware!")
+        else:
+            thread_ws = Thread(target=lambda: self.ws[index].run_forever())
+        thread_ws.daemon = True
+        thread_ws.name = f"WebSocket #{self.ws[index].index}"
+        thread_ws.start()
+
+    def end(self):
+        for index in range(0, len(self.ws)):
+            self.ws[index].forced_close = True
+            self.ws[index].close()
+
+    @staticmethod
+    def on_open(ws):
+        def run():
+            ws.is_opened = True
+            ws.ping()
+
+            for topic in ws.pending_topics:
+                ws.listen(topic, ws.twitch.twitch_login.get_auth_token())
+
+            while ws.is_closed is False:
+                # Else: the ws is currently in reconnecting phase, you can't do ping or other operation.
+                # Probably this ws will be closed very soon with ws.is_closed = True
+                if ws.is_reconnecting is False:
+                    ws.ping()  # We need ping for keep the connection alive
+                    # Increased interval from 25-30s to 120-180s (2-3 min)
+                    # With many WebSocket connections (~40+), aggressive pinging causes network congestion
+                    # Twitch allows up to 5 minutes between pongs before disconnect
+                    time.sleep(random.uniform(120, 180))
+
+                    if ws.elapsed_last_pong() > 5:
+                        logger.info(
+                            f"#{ws.index} - The last PONG was received more than 5 minutes ago"
+                        )
+                        WebSocketsPool.handle_reconnection(ws)
+
+        thread_ws = Thread(target=run)
+        thread_ws.daemon = True
+        thread_ws.start()
+
+    @staticmethod
+    def on_error(ws, error):
+        # Connection lost | [WinError 10054] An existing connection was forcibly closed by the remote host
+        # Connection already closed | Connection is already closed (raise WebSocketConnectionClosedException)
+        logger.error(f"#{ws.index} - WebSocket error: {error}")
+
+    @staticmethod
+    def on_close(ws, close_status_code, close_reason):
+        logger.info(f"#{ws.index} - WebSocket closed")
+        # On close please reconnect automatically
+        WebSocketsPool.handle_reconnection(ws)
+
+    @staticmethod
+    def handle_reconnection(ws):
+        # Reconnect only if ws.is_reconnecting is False to prevent more than 1 ws from being created
+        if ws.is_reconnecting is False:
+            # Close the current WebSocket.
+            ws.is_closed = True
+            ws.keep_running = False
+            # Reconnect only if ws.forced_close is False (replace the keep_running)
+
+            # Set the current socket as reconnecting status
+            # So the external ping check will be locked
+            ws.is_reconnecting = True
+
+            if ws.forced_close is False:
+                # Add randomization to prevent all WebSockets from reconnecting simultaneously
+                reconnect_delay = random.uniform(45, 75)  # 45-75 seconds instead of fixed 60
+                logger.info(
+                    f"#{ws.index} - Reconnecting to Twitch PubSub server in ~{reconnect_delay:.0f} seconds"
+                )
+                time.sleep(30)
+
+                while internet_connection_available() is False:
+                    random_sleep = random.randint(1, 3)
+                    logger.warning(
+                        f"#{ws.index} - No internet connection available! Retry after {random_sleep}m"
+                    )
+                    time.sleep(random_sleep * 60)
+
+                # Why not create a new ws on the same array index? Let's try.
+                self = ws.parent_pool
+                # Create a new connection.
+                self.ws[ws.index] = self.__new(ws.index)
+
+                self.__start(ws.index)  # Start a new thread.
+                # Add randomized delay before resubscribing to topics
+                time.sleep(random.uniform(15, 45))  # 15-45 seconds instead of fixed 30
+
+                for topic in ws.topics:
+                    self.__submit(ws.index, topic)
+
+    @staticmethod
+    def on_message(ws, message):
+        logger.debug(f"#{ws.index} - Received: {message.strip()}")
+        response = json.loads(message)
+
+        if response["type"] == "MESSAGE":
+            # We should create a Message class ...
+            message = Message(response["data"])
+
+            # If we have more than one PubSub connection, messages may be duplicated
+            # Check the concatenation between message_type.top.channel_id
+            if (
+                ws.last_message_type_channel is not None
+                and ws.last_message_timestamp is not None
+                and ws.last_message_timestamp == message.timestamp
+                and ws.last_message_type_channel == message.identifier
+            ):
+                return
+
+            ws.last_message_timestamp = message.timestamp
+            ws.last_message_type_channel = message.identifier
+
+            streamer_index = get_streamer_index(ws.streamers, message.channel_id)
+            if streamer_index != -1:
+                try:
+                    if message.topic == "community-points-user-v1":
+                        if message.type in ["points-earned", "points-spent"]:
+                            balance = message.data["balance"]["balance"]
+                            ws.streamers[streamer_index].channel_points = balance
+                            # Analytics switch
+                            if Settings.enable_analytics is True:
+                                ws.streamers[streamer_index].persistent_series(
+                                    event_type=message.data["point_gain"]["reason_code"]
+                                    if message.type == "points-earned"
+                                    else "Spent"
+                                )
+
+                        if message.type == "points-earned":
+                            earned = message.data["point_gain"]["total_points"]
+                            reason_code = message.data["point_gain"]["reason_code"]
+
+                            logger.info(
+                                f"+{earned} → {ws.streamers[streamer_index]} - Reason: {reason_code}.",
+                                extra={
+                                    "emoji": ":rocket:",
+                                    "event": Events.get(f"GAIN_FOR_{reason_code}"),
+                                },
+                            )
+                            ws.streamers[streamer_index].update_history(
+                                reason_code, earned
+                            )
+                            # Analytics switch
+                            if Settings.enable_analytics is True:
+                                ws.streamers[streamer_index].persistent_annotations(
+                                    reason_code, f"+{earned} - {reason_code}"
+                                )
+                        elif message.type == "claim-available":
+                            ws.twitch.claim_bonus(
+                                ws.streamers[streamer_index],
+                                message.data["claim"]["id"],
+                            )
+
+                    elif message.topic == "video-playback-by-id":
+                        # There is stream-up message type, but it's sent earlier than the API updates
+                        if message.type == "stream-up":
+                            ws.streamers[streamer_index].stream_up = time.time()
+                        elif message.type == "stream-down":
+                            if ws.streamers[streamer_index].is_online is True:
+                                ws.streamers[streamer_index].set_offline()
+                        elif message.type == "viewcount":
+                            if ws.streamers[streamer_index].stream_up_elapsed():
+                                ws.twitch.check_streamer_online(
+                                    ws.streamers[streamer_index]
+                                )
+
+                    elif message.topic == "raid":
+                        if message.type == "raid_update_v2":
+                            raid = Raid(
+                                message.message["raid"]["id"],
+                                message.message["raid"]["target_login"],
+                            )
+                            ws.twitch.update_raid(ws.streamers[streamer_index], raid)
+
+                    elif message.topic == "community-moments-channel-v1":
+                        if message.type == "active":
+                            ws.twitch.claim_moment(
+                                ws.streamers[streamer_index], message.data["moment_id"]
+                            )
+
+                    elif message.topic == "predictions-channel-v1":
+
+                        event_dict = message.data["event"]
+                        event_id = event_dict["id"]
+                        event_status = event_dict["status"]
+
+                        current_tmsp = parser.parse(message.timestamp)
+
+                        if (
+                            message.type == "event-created"
+                            and event_id not in ws.events_predictions
+                        ):
+                            if event_status == "ACTIVE":
+                                prediction_window_seconds = float(
+                                    event_dict["prediction_window_seconds"]
+                                )
+                                # Reduce prediction window by 3/6s - Collect more accurate data for decision
+                                prediction_window_seconds = ws.streamers[
+                                    streamer_index
+                                ].get_prediction_window(prediction_window_seconds)
+                                event = EventPrediction(
+                                    ws.streamers[streamer_index],
+                                    event_id,
+                                    event_dict["title"],
+                                    parser.parse(event_dict["created_at"]),
+                                    prediction_window_seconds,
+                                    event_status,
+                                    event_dict["outcomes"],
+                                )
+                                
+                                # Injecte le système de timing optimal si disponible
+                                if ws.parent_pool.optimal_timing_system is not None:
+                                    event.optimal_timing_system = ws.parent_pool.optimal_timing_system
+                                if (
+                                    ws.streamers[streamer_index].is_online
+                                    and event.closing_bet_after(current_tmsp) > 0
+                                ):
+                                    streamer = ws.streamers[streamer_index]
+                                    bet_settings = streamer.settings.bet
+                                    if (
+                                        bet_settings.minimum_points is None
+                                        or streamer.channel_points
+                                        > bet_settings.minimum_points
+                                    ):
+                                        ws.events_predictions[event_id] = event
+                                        
+                                        # === SYSTÈME ADAPTATIF (SmartBetTiming) ===
+                                        if ws.parent_pool.smart_bet_timing is not None:
+                                            # Utilise le système de timing adaptatif
+                                            def bet_callback(event_arg):
+                                                try:
+                                                    logger.info(
+                                                        f"🎯 Bet callback appelé pour {event_arg.event_id} (statut: {event_arg.status})",
+                                                        extra={
+                                                            "emoji": ":dart:",
+                                                            "event": Events.BET_START,
+                                                        },
+                                                    )
+                                                    ws.twitch.make_predictions(event_arg)
+                                                except Exception as e:
+                                                    logger.error(
+                                                        f"❌ Erreur dans callback bet pour {event_arg.event_id}: {e}",
+                                                        extra={
+                                                            "emoji": ":warning:",
+                                                            "event": Events.BET_FAILED,
+                                                        },
+                                                        exc_info=True,
+                                                    )
+                                            
+                                            ws.parent_pool.smart_bet_timing.start_monitoring(
+                                                event,
+                                                bet_callback
+                                            )
+                                            logger.info(
+                                                f"🔍 Monitoring adaptatif démarré pour {event}",
+                                                extra={
+                                                    "emoji": ":mag:",
+                                                    "event": Events.BET_START,
+                                                },
+                                            )
+                                        
+                                        # === SYSTÈME CLASSIQUE (Timer fixe) - Fallback ===
+                                        else:
+                                            # Calculer le délai réel selon delay_mode et delay
+                                            start_after = event.get_bet_delay(current_tmsp)
+                                            
+                                            # Vérifier que le délai est valide (positif et pas trop long)
+                                            if start_after <= 0:
+                                                logger.warning(
+                                                    f"⚠️ Délai invalide ({start_after}s) pour {event}, placement immédiat",
+                                                    extra={
+                                                        "emoji": ":warning:",
+                                                        "event": Events.BET_START,
+                                                    },
+                                                )
+                                                # Placer immédiatement si délai invalide
+                                                start_after = 0.1
+                                            
+                                            # Limiter le délai à 1 heure max pour éviter les timers trop longs
+                                            if start_after > 3600:
+                                                logger.warning(
+                                                    f"⚠️ Délai trop long ({start_after}s) pour {event}, limité à 1h",
+                                                    extra={
+                                                        "emoji": ":warning:",
+                                                        "event": Events.BET_START,
+                                                    },
+                                                )
+                                                start_after = 3600
+
+                                            # Créer une fonction wrapper pour logger l'exécution
+                                            def bet_timer_callback(event_arg):
+                                                try:
+                                                    logger.info(
+                                                        f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status})",
+                                                        extra={
+                                                            "emoji": ":alarm_clock:",
+                                                            "event": Events.BET_START,
+                                                        },
+                                                    )
+                                                    ws.twitch.make_predictions(event_arg)
+                                                except Exception as e:
+                                                    logger.error(
+                                                        f"❌ Erreur dans Timer bet pour {event_arg.event_id}: {e}",
+                                                        extra={
+                                                            "emoji": ":warning:",
+                                                            "event": Events.BET_FAILED,
+                                                        },
+                                                        exc_info=True,
+                                                    )
+                                            
+                                            place_bet_thread = Timer(
+                                                start_after,
+                                                bet_timer_callback,
+                                                (ws.events_predictions[event_id],),
+                                            )
+                                            place_bet_thread.daemon = False  # Non-daemon pour s'assurer qu'il s'exécute
+                                            place_bet_thread.start()
+
+                                            logger.info(
+                                                f"⏰ Timer fixe: Place the bet after: {start_after}s ({start_after/60:.1f} min) for: {ws.events_predictions[event_id]}",
+                                                extra={
+                                                    "emoji": ":alarm_clock:",
+                                                    "event": Events.BET_START,
+                                                },
+                                            )
+                                    else:
+                                        logger.info(
+                                            f"{streamer} have only {streamer.channel_points} channel points and the minimum for bet is: {bet_settings.minimum_points}",
+                                            extra={
+                                                "emoji": ":pushpin:",
+                                                "event": Events.BET_FILTERS,
+                                            },
+                                        )
+
+                        elif (
+                            message.type == "event-updated"
+                            and event_id in ws.events_predictions
+                        ):
+                            ws.events_predictions[event_id].status = event_status
+                            
+                            # Si la prédiction est fermée, arrête le monitoring
+                            if event_status != "ACTIVE":
+                                if ws.parent_pool.smart_bet_timing is not None:
+                                    ws.parent_pool.smart_bet_timing.stop_monitoring(event_id)
+                            
+                            # Game over we can't update anymore the values... The bet was placed!
+                            if (
+                                ws.events_predictions[event_id].bet_placed is False
+                                and ws.events_predictions[event_id].bet.decision == {}
+                            ):
+                                ws.events_predictions[event_id].bet.update_outcomes(
+                                    event_dict["outcomes"]
+                                )
+                                
+                                # Les données sont mises à jour, SmartBetTiming les utilisera dans sa prochaine vérification
+                                # Pas besoin de faire quoi que ce soit de plus, le monitoring loop les détectera
+
+                    elif message.topic == "predictions-user-v1":
+                        event_id = message.data["prediction"]["event_id"]
+                        if event_id in ws.events_predictions:
+                            event_prediction = ws.events_predictions[event_id]
+                            if (
+                                message.type == "prediction-result"
+                                and event_prediction.bet_confirmed
+                            ):
+                                points = event_prediction.parse_result(
+                                    message.data["prediction"]["result"]
+                                )
+                                
+                                # Log les résultats pour l'apprentissage du système de timing optimal
+                                if ws.parent_pool.optimal_timing_system is not None:
+                                    try:
+                                        streamer_id = str(event_prediction.streamer.channel_id) if hasattr(event_prediction.streamer, 'channel_id') else ""
+                                        streamer_name = event_prediction.streamer.username if hasattr(event_prediction.streamer, 'username') else ""
+                                        
+                                        announced_duration = event_prediction.prediction_window_seconds
+                                        actual_duration = (time.time() - event_prediction.prediction_start_time)
+                                        
+                                        ws.parent_pool.optimal_timing_system.log_prediction_result(
+                                            streamer_id=streamer_id,
+                                            streamer_name=streamer_name,
+                                            prediction_id=event_prediction.event_id,
+                                            announced_duration=int(announced_duration),
+                                            actual_duration=int(actual_duration)
+                                        )
+                                        
+                                        # Nettoie les données de la prédiction
+                                        ws.parent_pool.optimal_timing_system.cleanup_prediction(event_prediction.event_id)
+                                    except Exception as e:
+                                        logger.debug(f"Erreur lors du logging des résultats pour timing optimal: {e}")
+
+                                decision = event_prediction.bet.get_decision()
+                                choice = event_prediction.bet.decision["choice"]
+
+                                logger.info(
+                                    (
+                                        f"{event_prediction} - Decision: {choice}: {decision['title']} "
+                                        f"({decision['color']}) - Result: {event_prediction.result['string']}"
+                                    ),
+                                    extra={
+                                        "emoji": ":bar_chart:",
+                                        "event": Events.get(
+                                            f"BET_{event_prediction.result['type']}"
+                                        ),
+                                    },
+                                )
+
+                                ws.streamers[streamer_index].update_history(
+                                    "PREDICTION", points["gained"]
+                                )
+                                
+                                # Logger la prédiction dans le profiler (si disponible)
+                                try:
+                                    from TwitchChannelPointsMiner.classes.entities.StreamerPredictionProfiler import (
+                                        StreamerPredictionProfiler
+                                    )
+                                    profiler = StreamerPredictionProfiler()
+                                    
+                                    # Détermine le gagnant (0 ou 1)
+                                    winning_outcome_id = message.data["prediction"].get("winning_outcome_id")
+                                    winner = None
+                                    if winning_outcome_id:
+                                        # Trouve l'index de l'outcome gagnant
+                                        for idx, outcome in enumerate(event_prediction.bet.outcomes):
+                                            if outcome.get("id") == winning_outcome_id:
+                                                winner = idx
+                                                break
+                                    
+                                    # Prépare les données pour le profiler
+                                    prediction_data = {
+                                        'streamer_id': str(event_prediction.streamer.channel_id),
+                                        'streamer_name': event_prediction.streamer.username,
+                                        'title': event_prediction.title,
+                                        'game': '',  # Pas disponible dans EventPrediction
+                                        'outcomes': [
+                                            {
+                                                'title': event_prediction.bet.outcomes[0].get('title', ''),
+                                                'percentage_users': event_prediction.bet.outcomes[0].get('percentage_users', 0),
+                                                'odds': event_prediction.bet.outcomes[0].get('odds', 0)
+                                            },
+                                            {
+                                                'title': event_prediction.bet.outcomes[1].get('title', ''),
+                                                'percentage_users': event_prediction.bet.outcomes[1].get('percentage_users', 0),
+                                                'odds': event_prediction.bet.outcomes[1].get('odds', 0)
+                                            }
+                                        ],
+                                        'winner': winner,
+                                        'bet_placed': 1 if event_prediction.bet_placed else 0,
+                                        'bet_choice': choice if event_prediction.bet_placed else None,
+                                        'bet_amount': event_prediction.bet.decision.get('amount', 0) if event_prediction.bet_placed else 0,
+                                        'payout': points.get('won', 0) if event_prediction.result['type'] == 'WIN' else 0
+                                    }
+                                    
+                                    profiler.log_prediction(prediction_data)
+                                    profiler.close()
+                                    
+                                except Exception as e:
+                                    # Ne pas bloquer si le profiler échoue
+                                    logger.debug(f"Erreur lors du logging dans le profiler: {e}")
+
+                                # Remove duplicate history records from previous message sent in community-points-user-v1
+                                if event_prediction.result["type"] == "REFUND":
+                                    ws.streamers[streamer_index].update_history(
+                                        "REFUND",
+                                        -points["placed"],
+                                        counter=-1,
+                                    )
+                                elif event_prediction.result["type"] == "WIN":
+                                    ws.streamers[streamer_index].update_history(
+                                        "PREDICTION",
+                                        -points["won"],
+                                        counter=-1,
+                                    )
+
+                                if event_prediction.result["type"]:
+                                    # Analytics switch
+                                    if Settings.enable_analytics is True:
+                                        ws.streamers[
+                                            streamer_index
+                                        ].persistent_annotations(
+                                            event_prediction.result["type"],
+                                            f"{ws.events_predictions[event_id].title}",
+                                        )
+                            elif message.type == "prediction-made":
+                                event_prediction.bet_confirmed = True
+                                event_prediction.bet_placed = True
+                                
+                                # Arrête le monitoring SmartBetTiming si actif
+                                if ws.parent_pool.smart_bet_timing is not None:
+                                    ws.parent_pool.smart_bet_timing.stop_monitoring(event_prediction.event_id)
+                                # Analytics switch
+                                if Settings.enable_analytics is True:
+                                    ws.streamers[streamer_index].persistent_annotations(
+                                        "PREDICTION_MADE",
+                                        f"Decision: {event_prediction.bet.decision['choice']} - {event_prediction.title}",
+                                    )
+                    elif message.topic == "community-points-channel-v1":
+                        if message.type == "community-goal-created":
+                            # TODO Untested, hard to find this happening live
+                            ws.streamers[streamer_index].add_community_goal(
+                                CommunityGoal.from_pubsub(message.data["community_goal"])
+                            )
+                        elif message.type == "community-goal-updated":
+                            ws.streamers[streamer_index].update_community_goal(
+                                CommunityGoal.from_pubsub(message.data["community_goal"])
+                            )
+                        elif message.type == "community-goal-deleted":
+                            # TODO Untested, not sure what the message format for this is,
+                            #      https://github.com/sammwyy/twitch-ps/blob/master/main.js#L417
+                            #      suggests that it should be just the entire, now deleted, goal model
+                            ws.streamers[streamer_index].delete_community_goal(message.data["community_goal"]["id"])
+
+                        if message.type in ["community-goal-updated", "community-goal-created"]:
+                            ws.twitch.contribute_to_community_goals(ws.streamers[streamer_index])
+
+                except Exception:
+                    logger.error(
+                        f"Exception raised for topic: {message.topic} and message: {message}",
+                        exc_info=True,
+                    )
+
+        elif response["type"] == "RESPONSE" and len(response.get("error", "")) > 0:
+            # raise RuntimeError(f"Error while trying to listen for a topic: {response}")
+            error_message = response.get("error", "")
+            logger.error(f"Error while trying to listen for a topic: {error_message}")
+            
+            # Check if the error message indicates an authentication issue (ERR_BADAUTH)
+            if "ERR_BADAUTH" in error_message:
+                # Inform the user about the potential outdated cookie file
+                username = ws.twitch.twitch_login.username
+                logger.error(f"Received the ERR_BADAUTH error, most likely you have an outdated cookie file \"cookies\\{username}.pkl\". Delete this file and try again.")
+                # Attempt to delete the outdated cookie file
+                # try:
+                #     cookie_file_path = os.path.join("cookies", f"{username}.pkl")
+                #     if os.path.exists(cookie_file_path):
+                #         os.remove(cookie_file_path)
+                #         logger.info(f"Deleted outdated cookie file for user: {username}")
+                #     else:
+                #         logger.warning(f"Cookie file not found for user: {username}")
+                # except Exception as e:
+                #     logger.error(f"Error occurred while deleting cookie file: {str(e)}")
+
+        elif response["type"] == "RECONNECT":
+            logger.info(f"#{ws.index} - Reconnection required")
+            WebSocketsPool.handle_reconnection(ws)
+
+        elif response["type"] == "PONG":
+            ws.last_pong = time.time()
