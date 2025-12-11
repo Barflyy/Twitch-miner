@@ -202,8 +202,9 @@ except Exception as e:
 
 # Démarrer le serveur Analytics
 # host="0.0.0.0" permet l'accès depuis l'extérieur (Docker/Fly.io)
-print("📊 Démarrage du serveur Analytics sur http://localhost:5000")
-twitch_miner.analytics(host="0.0.0.0", port=5000, refresh=5, days_ago=7)
+# Port 5001 pour éviter conflit avec AirPlay Receiver (port 5000) sur macOS
+print("📊 Démarrage du serveur Analytics sur http://localhost:5001")
+twitch_miner.analytics(host="0.0.0.0", port=5001, refresh=5, days_ago=7)
 
 # Mode FICHIER JSON ou FOLLOWERS
 if USE_FOLLOWERS:

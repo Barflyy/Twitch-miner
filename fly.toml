@@ -19,3 +19,11 @@ primary_region = "iad"  # US - Washington DC (évite les blocages UE)
 cpu_kind = "shared"
 cpus = 1
 memory = "1gb"
+
+[http_service]
+  internal_port = 5001
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]

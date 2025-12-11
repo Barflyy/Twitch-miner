@@ -29,5 +29,8 @@ COPY . .
 # Créer le dossier pour le volume persistant
 RUN mkdir -p /data
 
+# Exposer le port pour l'analytics
+EXPOSE 5001
+
 # Commande de démarrage
 CMD ["python", "run.py"]
