@@ -13,7 +13,8 @@ username = os.getenv("TWITCH_USERNAME")
 # MODE D'AUTHENTIFICATION :
 # Les tokens OAuth des sites tiers (twitchtokengenerator) n'ont PAS les scopes GraphQL requis
 # On utilise donc la méthode TV Login officielle de Twitch (plus fiable)
-auth_token = os.getenv("TWITCH_AUTH_TOKEN")  # Utilise le token si fourni, sinon TV Login
+# auth_token = os.getenv("TWITCH_AUTH_TOKEN")  # Utilise le token si fourni, sinon TV Login
+auth_token = None  # ⚠️ FORCE TV LOGIN : On ignore le token pour forcer la génération d'un nouveau via code activation
 
 if not username:
     print("❌ Configuration manquante : TWITCH_USERNAME requis")
@@ -37,7 +38,12 @@ cookie_file = DATA_DIR / f"{username}_cookies.pkl"
 
 if cookie_file.exists():
     print(f"✅ Cookies trouvés: {cookie_file}")
-    print("💡 Utilisation des cookies sauvegardés (pas de code d'activation requis)")
+    # print("💡 Utilisation des cookies sauvegardés (pas de code d'activation requis)")
+    # Cookies preservation
+    if cookie_file.exists():
+        print(f"✅ Cookies trouvés: {cookie_file}")
+    else:
+        print("ℹ️ Aucun cookie trouvé, une nouvelle session sera créée")
 else:
     print("⚠️ Aucun cookie trouvé")
     print("💡 PREMIÈRE FOIS : Le bot va afficher un code d'activation")
@@ -111,7 +117,7 @@ from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
 from TwitchChannelPointsMiner.classes.Settings import Priority, Events
 from TwitchChannelPointsMiner.classes.Discord import Discord
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
-from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition
+from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition, DelayMode
 
 print("🔧 Configuration du bot...")
 
@@ -149,7 +155,7 @@ twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=auth_token,  # Utilise le token OAuth comme password
     claim_drops_startup=False,
-    enable_analytics=False,  # Désactiver analytics pour économiser mémoire
+    enable_analytics=True,  # Activer analytics pour le dashboard web
     # Priorités optimisées pour followers
     priority=[
         Priority.STREAK,        # Maintenir les streaks
@@ -176,9 +182,9 @@ twitch_miner = TwitchChannelPointsMiner(
         claim_drops=True,
         watch_streak=True,
         bet=BetSettings(
-            strategy=Strategy.MOST_VOTED,      # ✅ Vote là où il y a le PLUS de votants
+            strategy=Strategy.ADAPTIVE,        # ✅ Stratégie ADAPTIVE (Volume check + Profiler)
             percentage=5,                      # Parier 5% des points
-            percentage_gap=20,                 # Écart de 20% minimum (ignoré avec MOST_VOTED)
+            percentage_gap=20,                 # Écart de 20% minimum (ignoré avec ADAPTIVE)
             max_points=50000,                  # Maximum 50k points par pari
             # filter_condition supprimé pour parier sur TOUS les événements
         )
@@ -193,6 +199,11 @@ try:
     print("✅ Logs redirigés vers Discord (via discord_logs_queue.json)")
 except Exception as e:
     print(f"⚠️ Erreur configuration logging Discord: {e}")
+
+# Démarrer le serveur Analytics
+# host="0.0.0.0" permet l'accès depuis l'extérieur (Docker/Fly.io)
+print("📊 Démarrage du serveur Analytics sur http://localhost:5000")
+twitch_miner.analytics(host="0.0.0.0", port=5000, refresh=5, days_ago=7)
 
 # Mode FICHIER JSON ou FOLLOWERS
 if USE_FOLLOWERS:

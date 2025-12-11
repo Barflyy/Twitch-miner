@@ -66,6 +66,12 @@ class AdaptiveBetStrategy:
             'outcomes': outcomes
         }
 
+        # 0. Vérification du volume (Sécurité anti "1 seule personne")
+        total_users = sum(o.get(OutcomeKeys.TOTAL_USERS, 0) for o in outcomes)
+        if total_users < 50: # Minimum 50 votes pour considérer que c'est une "foule"
+            logger.info(f"❌ SKIP {streamer_name}: Pas assez de votes ({total_users} < 50)")
+            return None
+
         # 1. Consulte le profil du streamer
         bet_assessment = self.profiler.should_bet_on_streamer(streamer_id, prediction_data)
 
@@ -81,6 +87,9 @@ class AdaptiveBetStrategy:
 
         elif strategy == 'contrarian':
             decision = self._contrarian_strategy(outcomes, balance, base_percentage, max_bet, min_bet)
+
+        elif strategy == 'follow_high_rollers':
+            decision = self._follow_high_rollers_strategy(outcomes, balance, base_percentage, max_bet, min_bet)
 
         elif strategy == 'sharp_only':
             decision = self._sharp_only_strategy(outcomes, balance, base_percentage, max_bet, min_bet)
@@ -144,7 +153,7 @@ class AdaptiveBetStrategy:
         majority_choice = 0 if pct1 > pct2 else 1
         majority_pct = max(pct1, pct2)
 
-        if majority_pct < 55:
+        if majority_pct < 51:
             return None  # Pas de majorité claire
 
         # Calcule le montant
@@ -228,4 +237,44 @@ class AdaptiveBetStrategy:
             }
 
         return None  # Skip si pas de sharp signal
+
+    def _follow_high_rollers_strategy(
+        self, 
+        outcomes: list, 
+        balance: int, 
+        base_percentage: float, 
+        max_bet: int, 
+        min_bet: int
+    ) -> Optional[Dict[str, Any]]:
+        """Suit l'argent (les gros parieurs)."""
+        if len(outcomes) < 2:
+            return None
+
+        # Analyse le money flow
+        pattern = self.pattern_analyzer.analyze_betting_pattern(outcomes)
+        money_flow = pattern.get('money_flow', {})
+        
+        if not money_flow:
+            return None
+            
+        big_money_choice = money_flow.get('big_money_on', 0) - 1 # 1-based to 0-based
+        avg_ratio = money_flow.get('avg_ratio', 1.0)
+        
+        # Vérifie si le signal est assez fort (ratio > 1.2)
+        if avg_ratio < 1.2 and avg_ratio > (1/1.2):
+            return None # Pas assez de différence
+            
+        # Montant standard
+        amount = min(int(balance * (base_percentage / 100)), max_bet)
+        amount = max(amount, min_bet)
+
+        return {
+            'choice': big_money_choice,
+            'id': outcomes[big_money_choice].get('id'),
+            'amount': amount,
+            'confidence': 0.70,
+            'reason': f"Follow High Rollers (ratio {avg_ratio:.2f})",
+            'signal_type': 'follow_high_rollers',
+            'conviction': 'medium'
+        }
 

@@ -869,28 +869,46 @@ async def send_batch_to_channel(channel, logs, type_name="DEBUG"):
     
     # Formater les messages
     description_lines = []
+    
     for log in logs:
-        timestamp = log['timestamp'].strftime('%H:%M:%S')
+        # Timestamp court (HH:MM)
+        try:
+            timestamp = log['timestamp'].strftime('%H:%M')
+        except:
+            timestamp = "??:??"
+            
         msg = log.get('message', '')
         
-        # 🎯 FORMATAGE AMÉLIORÉ POUR LES PARIS
+        # 🎯 FORMATAGE AMÉLIORÉ
         formatted_msg = msg
         
-        # 1. Pari placé (le plus important à embellir)
-        if "Place" in msg and "channel points on:" in msg:
-            match = re.search(r'Place (.+?) channel points on: (.+?), Points: (.+?), Users: (.+?) \((.+?)%\)', msg)
+        # 1. Pari placé (Nouveau format avec streamer inclus)
+        # Log: "Place 160 channel points on STREAMER: CHOICE (COLOR), Points: ..., Users: ..."
+        if "Place" in msg and "channel points on" in msg:
+            # Regex pour le nouveau format (avec streamer)
+            match = re.search(r'Place (.+?) channel points on (.+?): (.+?), Points: (.+?), Users: (.+?) \((.+?)%\)', msg)
+            # Regex fallback pour l'ancien format (sans streamer)
+            match_old = re.search(r'Place (.+?) channel points on: (.+?), Points: (.+?), Users: (.+?) \((.+?)%\)', msg)
+            
             if match:
-                amount, choice, total_points, users, percentage = match.groups()
-                # Extraire le nom du streamer si présent
+                amount, streamer, choice, total_points, users, percentage = match.groups()
+            elif match_old:
+                amount, choice, total_points, users, percentage = match_old.groups()
+                # Essayer de trouver le streamer ailleurs ou mettre ?
                 streamer_match = re.search(r'Streamer\(username=([^,]+)', msg)
                 streamer = streamer_match.group(1) if streamer_match else "?"
-                
+            else:
+                amount, streamer, choice, total_points, users, percentage = None, None, None, None, None, None
+
+            if amount:
                 formatted_msg = (
                     f"**🎲 Pari sur {streamer}**\n"
-                    f"├─ Mise: `{amount}` pts\n"
-                    f"├─ Choix: **{choice}**\n"
-                    f"├─ Popularité: `{percentage}%` ({users} votants)\n"
-                    f"└─ Total misé: {total_points} pts"
+                    f"```yaml\n"
+                    f"Mise   : {amount} pts\n"
+                    f"Choix  : {choice}\n"
+                    f"Vote   : {percentage}% ({users} votants)\n"
+                    f"Total  : {total_points} pts\n"
+                    f"```"
                 )
         
         # 2. Résultat de pari (victoire)
@@ -898,14 +916,14 @@ async def send_batch_to_channel(channel, logs, type_name="DEBUG"):
             match = re.search(r'([+-]\d+)\s*→\s*Streamer\(username=([^,]+)', msg)
             if match:
                 points, streamer = match.groups()
-                formatted_msg = f"**🏆 VICTOIRE sur {streamer}** : `{points} pts`"
+                formatted_msg = f"**🏆 {streamer}** • `+{points} pts` • *Victoire*"
         
         # 3. Résultat de pari (défaite)
         elif "lost" in msg.lower() and "-" in msg:
             match = re.search(r'([+-]\d+)\s*→\s*Streamer\(username=([^,]+)', msg)
             if match:
                 points, streamer = match.groups()
-                formatted_msg = f"**💸 Défaite sur {streamer}** : `{points} pts`"
+                formatted_msg = f"**💸 {streamer}** • `{points} pts` • *Défaite*"
         
         # 4. Gains réguliers (watch, claim, raid)
         elif "→" in msg and "Reason:" in msg and "BET" not in msg.upper():
@@ -919,16 +937,24 @@ async def send_batch_to_channel(channel, logs, type_name="DEBUG"):
                     "WATCH_STREAK": "🔥 Série"
                 }
                 reason_text = reason_map.get(reason, reason.lower())
-                formatted_msg = f"**{streamer}** : `{points} pts` ({reason_text})"
+                formatted_msg = f"**{streamer}** • `+{points} pts` • *{reason_text}*"
         
         # 5. Bonus claims
         elif "Claiming the bonus" in msg or "BONUS" in msg.upper():
             match = re.search(r'Streamer\(username=([^,]+)', msg)
             if match:
                 streamer = match.group(1)
-                formatted_msg = f"**{streamer}** : `+50 pts` (Bonus 🎁)"
+                formatted_msg = f"**{streamer}** • `+50 pts` • *Bonus 🎁*"
         
-        # 6. Code d'activation (CRITIQUE)
+        # 6. Raids (Nouveau !)
+        elif "Joining raid" in msg:
+            # Log: "Joining raid from Streamer(username=forky, ...) to spoodah!"
+            match = re.search(r'Joining raid from Streamer\(username=([^,]+).+? to (.+?)!', msg)
+            if match:
+                raider, target = match.groups()
+                formatted_msg = f"**⚔️ Raid** : **{raider}** ➡️ **{target}**"
+        
+        # 7. Code d'activation (CRITIQUE)
         elif "activate" in msg.lower() and "code" in msg.lower():
             if "Open https://www.twitch.tv/activate" in msg:
                 formatted_msg = f"🚨 **ACTION REQUISE** 🚨\n> Ouvre : https://www.twitch.tv/activate"
@@ -1465,6 +1491,13 @@ async def create_or_update_pinned_list(guild):
     """🆕 Crée ou met à jour le message épinglé unique qui liste tous les streamers"""
     global pinned_list_channel_id, pinned_list_message_id
     
+    # Variable globale pour suivre l'état précédent (persistance simple)
+    global last_pinned_data_signature
+    try:
+        last_pinned_data_signature
+    except NameError:
+        last_pinned_data_signature = ""
+    
     try:
         # Créer ou récupérer le canal (le bot le crée automatiquement si nécessaire)
         list_channel = await create_pinned_channel(guild, force_recreate=False)
@@ -1478,7 +1511,7 @@ async def create_or_update_pinned_list(guild):
         
         # Vérifier qu'on a des données
         if not streamer_data or len(streamer_data) == 0:
-            print("⏳ En attente des données du miner...")
+            # print("⏳ En attente des données du miner...")
             return
         
         # Trier les streamers : en ligne d'abord, puis hors ligne
@@ -1497,6 +1530,21 @@ async def create_or_update_pinned_list(guild):
         total_bonus_points = sum(s.get('bonus_points', 0) for s in streamer_data.values())
         total_bets_won = sum(s.get('bets_won', 0) for s in streamer_data.values())
         total_bets_lost = sum(s.get('bets_lost', 0) for s in streamer_data.values())
+        
+        # ⚡ OPTIMISATION : Vérifier si les données ont changé avant de reconstruire l'embed
+        # On construit une signature unique basée sur les données affichées
+        current_signature = f"{online_count}|{offline_count}|{total_balance}|{total_session_points}|{total_bets_won}|{total_bets_lost}"
+        
+        # Ajouter les détails des streamers en ligne (nom + balance + session) pour détecter les changements
+        for s, d in sorted_streamers:
+            if d.get('online', False):
+                current_signature += f"|{s}:{d.get('balance', 0)}:{d.get('session_points', 0)}"
+        
+        # Si la signature est identique, on ne fait rien (économie d'API Discord)
+        if last_pinned_data_signature == current_signature:
+            return
+            
+        last_pinned_data_signature = current_signature
         
         # Formatage des nombres
         balance_display = f"{total_balance:,.0f}".replace(',', ' ')
@@ -1592,25 +1640,16 @@ async def create_or_update_pinned_list(guild):
                 save_channels()
                 
                 # Supprimer le message système "message épinglé"
-                await asyncio.sleep(1)  # Attendre un peu pour que le message système apparaisse
+                await asyncio.sleep(1)
                 try:
                     async for msg in list_channel.history(limit=10):
-                        # Chercher les messages système d'épinglage
                         if msg.type == discord.MessageType.pins_add:
-                            # Vérifier si c'est lié à notre message
                             if msg.reference and msg.reference.message_id == message.id:
-                                try:
-                                    await msg.delete()
-                                    break
-                                except:
-                                    pass
-                            # Ou chercher par contenu si pas de référence
-                            elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
-                                try:
-                                    await msg.delete()
-                                    break
-                                except:
-                                    pass
+                                await msg.delete()
+                                break
+                        elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
+                            await msg.delete()
+                            break
                 except:
                     pass
                 
@@ -1624,25 +1663,16 @@ async def create_or_update_pinned_list(guild):
             save_channels()
             
             # Supprimer le message système "message épinglé"
-            await asyncio.sleep(1)  # Attendre un peu pour que le message système apparaisse
+            await asyncio.sleep(1)
             try:
                 async for msg in list_channel.history(limit=10):
-                    # Chercher les messages système d'épinglage
                     if msg.type == discord.MessageType.pins_add:
-                        # Vérifier si c'est lié à notre message
                         if msg.reference and msg.reference.message_id == message.id:
-                            try:
-                                await msg.delete()
-                                break
-                            except:
-                                pass
-                        # Ou chercher par contenu si pas de référence
-                        elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
-                            try:
-                                await msg.delete()
-                                break
-                            except:
-                                pass
+                            await msg.delete()
+                            break
+                    elif "épinglé" in msg.content.lower() or "pinned" in msg.content.lower():
+                        await msg.delete()
+                        break
             except:
                 pass
             

@@ -51,7 +51,8 @@ class TwitchLogin(object):
         "user_id",
         "email",
         "cookies",
-        "shared_cookies"
+        "shared_cookies",
+        "token_client_id"
     ]
 
     def __init__(self, client_id, device_id, username, user_agent, password=None):
@@ -71,6 +72,7 @@ class TwitchLogin(object):
 
         self.cookies = []
         self.shared_cookies = []
+        self.token_client_id = None
 
     def login_flow(self):
         logger.info("You'll have to login to Twitch!")

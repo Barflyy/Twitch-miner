@@ -410,11 +410,13 @@ class TwitchChannelPointsMiner:
                 updated_count = 0
                 for streamer in self.streamers:
                     streamer_name = streamer.username.lower()
+                    
+                    # Si le streamer n'existe pas, on le crée
                     if streamer_name not in data['streamers']:
                         data['streamers'][streamer_name] = {
                             'online': streamer.is_online,
                             'balance': streamer.channel_points,
-                            'starting_balance': streamer.channel_points,
+                            'starting_balance': streamer.channel_points, # Nouveau départ
                             'total_earned': 0,
                             'session_points': 0,
                             'watch_points': 0,
@@ -425,20 +427,25 @@ class TwitchChannelPointsMiner:
                         }
                         updated_count += 1
                     else:
-                        # Mettre à jour le solde et le statut
-                        old_balance = data['streamers'][streamer_name].get('balance', 0)
+                        # Streamer existant : ON RESET LA SESSION
+                        # On garde total_earned, mais on reset tout le reste pour la nouvelle session
                         data['streamers'][streamer_name]['balance'] = streamer.channel_points
                         data['streamers'][streamer_name]['online'] = streamer.is_online
                         
-                        # Si le solde a changé et qu'on n'a pas encore de starting_balance, l'initialiser
-                        if 'starting_balance' not in data['streamers'][streamer_name] or data['streamers'][streamer_name]['starting_balance'] == 0:
-                            data['streamers'][streamer_name]['starting_balance'] = streamer.channel_points
+                        # RESET SESSION DATA
+                        data['streamers'][streamer_name]['starting_balance'] = streamer.channel_points # Reset baseline
+                        data['streamers'][streamer_name]['session_points'] = 0
+                        data['streamers'][streamer_name]['watch_points'] = 0
+                        data['streamers'][streamer_name]['bonus_points'] = 0
+                        data['streamers'][streamer_name]['bets_placed'] = 0
+                        data['streamers'][streamer_name]['bets_won'] = 0
+                        data['streamers'][streamer_name]['bets_lost'] = 0
                 
                 # Sauvegarder
                 with open(data_file, 'w') as f:
                     json.dump(data, f, indent=2)
                 
-                logger.info(f"📊 bot_data.json mis à jour : {updated_count} nouveaux streamers, {len(self.streamers)} total")
+                logger.info(f"📊 bot_data.json réinitialisé pour la session : {len(self.streamers)} streamers")
             except Exception as e:
                 logger.warning(f"⚠️ Erreur mise à jour bot_data.json : {e}")
 
@@ -472,20 +479,20 @@ class TwitchChannelPointsMiner:
             self.minute_watcher_thread.name = "Minute watcher"
             self.minute_watcher_thread.start()
 
-            # 🚀 Surveillance automatique des streams suivis via API Helix
-            # Détecte rapidement les changements d'état (en ligne/hors ligne)
-            if followers is True:
-                self.stream_monitor_thread = threading.Thread(
-                    target=self.twitch.monitor_followed_streams,
-                    args=(self.streamers,),
-                    kwargs={"check_interval": 60}  # Vérifie toutes les 60 secondes
-                )
-                self.stream_monitor_thread.name = "Stream monitor (API Helix)"
-                self.stream_monitor_thread.start()
-                logger.info(
-                    "🔄 Surveillance automatique des streams activée (API Helix, toutes les 60s)",
-                    extra={"emoji": ":satellite:"}
-                )
+            # 🚀 Surveillance automatique des streams via API Helix (TOUJOURS ACTIVE)
+            # Remplace video-playback-by-id pour l'état en ligne/hors ligne
+            # Détecte rapidement les changements d'état
+            self.stream_monitor_thread = threading.Thread(
+                target=self.twitch.monitor_followed_streams,
+                args=(self.streamers,),
+                kwargs={"check_interval": 60}  # Vérifie toutes les 60 secondes
+            )
+            self.stream_monitor_thread.name = "Stream monitor (API Helix)"
+            self.stream_monitor_thread.start()
+            logger.info(
+                "🔄 Surveillance automatique des streams activée (API Helix, toutes les 60s)",
+                extra={"emoji": ":satellite:"}
+            )
 
             self.ws_pool = WebSocketsPool(
                 twitch=self.twitch,
@@ -519,9 +526,11 @@ class TwitchChannelPointsMiner:
                 )
 
             for streamer in self.streamers:
-                self.ws_pool.submit(
-                    PubsubTopic("video-playback-by-id", streamer=streamer)
-                )
+                # 🗑️ OPTIMISATION : Désactivé pour économiser des connexions
+                # L'état en ligne est géré par monitor_followed_streams (API Helix)
+                # self.ws_pool.submit(
+                #     PubsubTopic("video-playback-by-id", streamer=streamer)
+                # )
 
                 if streamer.settings.follow_raid is True:
                     self.ws_pool.submit(PubsubTopic("raid", streamer=streamer))
@@ -536,10 +545,12 @@ class TwitchChannelPointsMiner:
                         PubsubTopic("community-moments-channel-v1", streamer=streamer)
                     )
 
-                if streamer.settings.community_goals is True:
-                    self.ws_pool.submit(
-                        PubsubTopic("community-points-channel-v1", streamer=streamer)
-                    )
+                # 🗑️ OPTIMISATION : Désactivé pour économiser des connexions
+                # Les Community Goals ne rapportent pas de points (juste dépense)
+                # if streamer.settings.community_goals is True:
+                #     self.ws_pool.submit(
+                #         PubsubTopic("community-points-channel-v1", streamer=streamer)
+                #     )
 
             refresh_context = time.time()
             while self.running:

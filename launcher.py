@@ -110,11 +110,11 @@ def main():
     
     # Vérifier les variables d'environnement
     required_vars = {
-        "TWITCH_USERNAME": "Username Twitch",
-        "TWITCH_AUTH_TOKEN": "Token d'authentification Twitch"
+        "TWITCH_USERNAME": "Username Twitch"
     }
     
     optional_vars = {
+        "TWITCH_AUTH_TOKEN": "Token d'authentification Twitch (optionnel, sinon TV Login)",
         "DISCORD_BOT_TOKEN": "Token du bot Discord",
         "DISCORD_CHANNEL_ID": "ID du canal Discord"
     }
@@ -127,7 +127,7 @@ def main():
     missing_optional = []
     for var, desc in optional_vars.items():
         if not os.getenv(var):
-            missing_optional.append(f"  ⚠️  {var} ({desc}) - Optionnel")
+            missing_optional.append(f"  ⚠️  {var} ({desc})")
     
     if missing:
         print("\n❌ Variables d'environnement OBLIGATOIRES manquantes:", flush=True)
@@ -141,7 +141,14 @@ def main():
         print("\n⚠️  Variables d'environnement optionnelles manquantes:", flush=True)
         for m in missing_optional:
             print(m, flush=True)
-        print("⚠️  Le bot Discord ne démarrera pas, mais le miner continuera", flush=True)
+        
+        # Avertissement spécial pour TWITCH_AUTH_TOKEN
+        if not os.getenv("TWITCH_AUTH_TOKEN"):
+            print("💡 TWITCH_AUTH_TOKEN non fourni → Le bot utilisera la méthode TV Login", flush=True)
+            print("   Vous devrez entrer un code d'activation sur https://www.twitch.tv/activate", flush=True)
+        
+        if not os.getenv("DISCORD_BOT_TOKEN"):
+            print("⚠️  Le bot Discord ne démarrera pas", flush=True)
     
     print("\n✅ Variables obligatoires configurées", flush=True)
     print(f"✅ Twitch: {os.getenv('TWITCH_USERNAME')}", flush=True)

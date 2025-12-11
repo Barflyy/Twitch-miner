@@ -47,12 +47,8 @@ class TwitchWebSocket(WebSocketApp):
         self.send({"type": "LISTEN", "nonce": nonce, "data": data})
 
     def ping(self):
-        try:
-            self.send({"type": "PING"})
-            self.last_ping = time.time()
-        except Exception as e:
-            logger.warning(f"#{self.index} - Failed to send PING: {e}")
-            self.is_closed = True
+        self.send({"type": "PING"})
+        self.last_ping = time.time()
 
     def send(self, request):
         try:
@@ -60,18 +56,6 @@ class TwitchWebSocket(WebSocketApp):
             logger.debug(f"#{self.index} - Send: {request_str}")
             super().send(request_str)
         except WebSocketConnectionClosedException:
-            logger.debug(f"#{self.index} - Connection closed while sending")
-            self.is_closed = True
-        except BrokenPipeError:
-            logger.debug(f"#{self.index} - Broken pipe while sending (connection died)")
-            self.is_closed = True
-        except OSError as e:
-            # Catches Connection reset by peer, SSL errors, etc.
-            logger.debug(f"#{self.index} - Network error while sending: {e}")
-            self.is_closed = True
-        except Exception as e:
-            # Catch-all for any other errors (SSL, etc.)
-            logger.warning(f"#{self.index} - Unexpected error while sending: {e}")
             self.is_closed = True
 
     def elapsed_last_pong(self):

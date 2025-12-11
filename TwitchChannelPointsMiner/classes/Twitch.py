@@ -117,25 +117,62 @@ class Twitch(object):
             if self.twitch_login.check_login():
                 logger.info(f"✅ OAuth token valid! User ID: {self.twitch_login.user_id}")
                 
-                # Vérifier les scopes du token pour les prédictions
+                # Vérifier les scopes du token
                 scope_validation = self.twitch_login.validate_token_scopes()
                 if scope_validation and scope_validation.get("valid"):
                     scopes = scope_validation.get("scopes", [])
-                    required_scopes = ["channel:read:predictions", "channel:manage:predictions"]
-                    missing_scopes = [s for s in required_scopes if s not in scopes]
+                    token_client_id = scope_validation.get("client_id")
                     
-                    if missing_scopes:
+                    # 🔍 DIAGNOSTIC: Vérifier si le Client-ID du token correspond
+                    logger.info(f"🔑 Client-ID du bot: {CLIENT_ID}")
+                    logger.info(f"🔑 Client-ID du token: {token_client_id}")
+                    
+                    if token_client_id and token_client_id != CLIENT_ID:
+                        logger.warning("⚠️ PROBLÈME DÉTECTÉ: Le Client-ID du token ne correspond pas au Client-ID du bot!")
                         logger.warning(
-                            f"⚠️ Token OAuth manque des scopes pour les prédictions: {', '.join(missing_scopes)}"
+                            f"   Client-ID attendu: {CLIENT_ID}\n"
+                            f"   Client-ID du token: {token_client_id}\n"
+                            "✅ Le bot va utiliser le Client-ID du token pour les appels API Helix."
                         )
+                        # Sauvegarder le Client-ID du token pour l'utiliser dans les appels Helix
+                        self.twitch_login.token_client_id = token_client_id
+                    
+                    # Scopes requis pour les prédictions
+                    prediction_scopes = ["channel:read:predictions", "channel:manage:predictions"]
+                    missing_prediction_scopes = [s for s in prediction_scopes if s not in scopes]
+                    
+                    # Scopes requis pour récupérer les follows via Helix API
+                    follows_scopes = ["user:read:follows"]
+                    missing_follows_scopes = [s for s in follows_scopes if s not in scopes]
+                    
+                    # Afficher les warnings et recommandations
+                    if missing_prediction_scopes:
                         logger.warning(
-                            "💡 Pour activer les prédictions, régénérez votre token avec ces scopes:\n"
-                            f"   - channel:read:predictions\n"
-                            f"   - channel:manage:predictions\n"
-                            f"   Sur https://twitchtokengenerator.com/ (Custom Scope Token)"
+                            f"⚠️ Token OAuth manque des scopes pour les prédictions: {', '.join(missing_prediction_scopes)}"
                         )
                     else:
                         logger.info("✅ Token OAuth a tous les scopes nécessaires pour les prédictions")
+                    
+                    if missing_follows_scopes:
+                        logger.warning(
+                            f"⚠️ Token OAuth manque des scopes pour récupérer les follows: {', '.join(missing_follows_scopes)}"
+                        )
+                        logger.warning(
+                            "⚠️ Le bot utilisera la méthode GraphQL (plus lente) pour charger vos follows"
+                        )
+                    else:
+                        logger.info("✅ Token OAuth a le scope pour récupérer les follows via Helix API")
+                    
+                    # Si des scopes manquent, afficher les instructions
+                    all_missing = missing_prediction_scopes + missing_follows_scopes
+                    if all_missing:
+                        logger.warning(
+                            "💡 Pour obtenir un token avec tous les scopes nécessaires:\n"
+                            f"   1. Allez sur https://twitchtokengenerator.com/\n"
+                            f"   2. Sélectionnez 'Custom Scope Token Generator'\n"
+                            f"   3. Cochez ces scopes: {', '.join(set(prediction_scopes + follows_scopes))}\n"
+                            f"   4. Générez le token et mettez à jour TWITCH_AUTH_TOKEN"
+                        )
                 
                 # Sauvegarder le token dans les cookies pour les prochaines fois
                 self.twitch_login.save_cookies(self.cookies_file)
@@ -299,8 +336,9 @@ class Twitch(object):
                 logger.warning("⚠️ Pas de token OAuth pour récupérer les channel IDs en batch")
                 return {}
             
+            client_id = self.twitch_login.token_client_id or CLIENT_ID
             headers = {
-                "Client-ID": CLIENT_ID,
+                "Client-ID": client_id,
                 "Authorization": f"Bearer {user_token}"
             }
             
@@ -354,8 +392,9 @@ class Twitch(object):
 
             # 2. Headers pour les requêtes API Helix avec User Access Token
             # L'API Helix nécessite un User Access Token pour /channels/followed
+            client_id = self.twitch_login.token_client_id or CLIENT_ID
             headers = {
-                "Client-ID": CLIENT_ID,  # Utilise le CLIENT_ID du bot (constante)
+                "Client-ID": client_id,
                 "Authorization": f"Bearer {user_token}"
             }
 
@@ -448,8 +487,9 @@ class Twitch(object):
                 return None
 
             # 2. Headers pour les requêtes API Helix
+            client_id = self.twitch_login.token_client_id or CLIENT_ID
             headers = {
-                "Client-ID": CLIENT_ID,
+                "Client-ID": client_id,
                 "Authorization": f"Bearer {user_token}"
             }
 
@@ -1370,7 +1410,7 @@ class Twitch(object):
                 if decision["amount"] >= 10:
                     logger.info(
                         # f"Place {_millify(decision['amount'])} channel points on: {event.bet.get_outcome(selector_index)}",
-                        f"Place {_millify(decision['amount'])} channel points on: {event.bet.get_outcome(decision['choice'])}",
+                        f"Place {_millify(decision['amount'])} channel points on {event.streamer.username}: {event.bet.get_outcome(decision['choice'])}",
                         extra={
                             "emoji": ":four_leaf_clover:",
                             "event": Events.BET_GENERAL,

@@ -43,22 +43,16 @@ class WebSocketsPool:
         except Exception as e:
             logger.debug(f"Erreur initialisation timing optimal: {e}")
         
-        # Initialise le système de timing adaptatif V2 (SmartBetTiming)
-        # 🔧 TEMPORAIREMENT DÉSACTIVÉ pour diagnostiquer les problèmes WebSocket
-        # Le SmartBetTiming crée un thread par prédiction, ce qui peut surcharger les connexions
-        self.smart_bet_timing = None
-        logger.warning("⚠️ SmartBetTiming DÉSACTIVÉ (diagnostic WebSocket) - Utilisation du Timer classique")
-        
-        # try:
-        #     from TwitchChannelPointsMiner.classes.entities.SmartBetTiming import SmartBetTiming
-        #     # V2 : Adaptatif automatique selon durée de prédiction et profil streamer
-        #     # Plus besoin de paramètres fixes, tout est calculé dynamiquement
-        #     self.smart_bet_timing = SmartBetTiming()
-        #     logger.info("✅ SmartBetTiming V2 initialisé (mode adaptatif automatique)")
-        # except ImportError as e:
-        #     logger.error(f"❌ ERREUR: SmartBetTiming non disponible (ImportError): {e}")
-        # except Exception as e:
-        #     logger.error(f"❌ ERREUR: Initialisation SmartBetTiming échouée: {e}", exc_info=True)
+        try:
+            from TwitchChannelPointsMiner.classes.entities.SmartBetTiming import SmartBetTiming
+            # V2 : Adaptatif automatique selon durée de prédiction et profil streamer
+            # Plus besoin de paramètres fixes, tout est calculé dynamiquement
+            self.smart_bet_timing = SmartBetTiming()
+            logger.info("✅ SmartBetTiming V2 initialisé (mode adaptatif automatique)")
+        except ImportError as e:
+            logger.error(f"❌ ERREUR: SmartBetTiming non disponible (ImportError): {e}")
+        except Exception as e:
+            logger.error(f"❌ ERREUR: Initialisation SmartBetTiming échouée: {e}", exc_info=True)
 
     """
     API Limits
@@ -139,10 +133,7 @@ class WebSocketsPool:
                 # Probably this ws will be closed very soon with ws.is_closed = True
                 if ws.is_reconnecting is False:
                     ws.ping()  # We need ping for keep the connection alive
-                    # Increased interval from 25-30s to 120-180s (2-3 min)
-                    # With many WebSocket connections (~40+), aggressive pinging causes network congestion
-                    # Twitch allows up to 5 minutes between pongs before disconnect
-                    time.sleep(random.uniform(120, 180))
+                    time.sleep(random.uniform(25, 30))
 
                     if ws.elapsed_last_pong() > 5:
                         logger.info(
@@ -158,7 +149,11 @@ class WebSocketsPool:
     def on_error(ws, error):
         # Connection lost | [WinError 10054] An existing connection was forcibly closed by the remote host
         # Connection already closed | Connection is already closed (raise WebSocketConnectionClosedException)
-        logger.error(f"#{ws.index} - WebSocket error: {error}")
+        error_str = str(error)
+        if "ping pong failed" in error_str:
+            logger.warning(f"#{ws.index} - WebSocket connection unstable: {error_str} (will reconnect)")
+        else:
+            logger.error(f"#{ws.index} - WebSocket error: {error}")
 
     @staticmethod
     def on_close(ws, close_status_code, close_reason):
@@ -180,10 +175,8 @@ class WebSocketsPool:
             ws.is_reconnecting = True
 
             if ws.forced_close is False:
-                # Add randomization to prevent all WebSockets from reconnecting simultaneously
-                reconnect_delay = random.uniform(45, 75)  # 45-75 seconds instead of fixed 60
                 logger.info(
-                    f"#{ws.index} - Reconnecting to Twitch PubSub server in ~{reconnect_delay:.0f} seconds"
+                    f"#{ws.index} - Reconnecting to Twitch PubSub server in ~60 seconds"
                 )
                 time.sleep(30)
 
@@ -512,7 +505,11 @@ class WebSocketsPool:
                                 logger.info(
                                     (
                                         f"{event_prediction} - Decision: {choice}: {decision['title']} "
-                                        f"({decision['color']}) - Result: {event_prediction.result['string']}"
+                                        f"({decision['color']}) - Result: {event_prediction.result['string']}\n"
+                                        f"📝 Strategy: {decision.get('reason', 'Unknown')}\n"
+                                        f"📊 Odds: {decision.get('odds', 0)} ({decision.get('odds_percentage', 0)}%)\n"
+                                        f"👥 Users: {decision.get('percentage_users', 0)}% ({decision.get('total_users', 0)})\n"
+                                        f"🎯 Confidence: {decision.get('confidence', 'N/A')}"
                                     ),
                                     extra={
                                         "emoji": ":bar_chart:",
