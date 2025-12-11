@@ -14,8 +14,6 @@ class Strategy(Enum):
     PERCENTAGE = auto()
     SMART_MONEY = auto()
     SMART = auto()
-    CROWD_WISDOM = auto()  # Nouvelle stratégie basée sur l'intelligence collective
-    ADAPTIVE = auto()  # Stratégie adaptive basée sur le profil du streamer
     NUMBER_1 = auto()
     NUMBER_2 = auto()
     NUMBER_3 = auto()
@@ -292,119 +290,8 @@ class Bet(object):
         else:
             return False, 0  # Default don't skip the bet
 
-    def calculate(self, balance: int, data_quality_multiplier: float = 1.0) -> dict:
+    def calculate(self, balance: int) -> dict:
         self.decision = {"choice": None, "amount": 0, "id": None}
-
-        # Stratégie ADAPTIVE basée sur le profil du streamer
-        if self.settings.strategy == Strategy.ADAPTIVE:
-            try:
-                from TwitchChannelPointsMiner.classes.entities.AdaptiveBetStrategy import (
-                    AdaptiveBetStrategy
-                )
-                
-                # Créer la stratégie adaptive
-                adaptive_strategy = AdaptiveBetStrategy()
-                
-                # Récupérer les infos du streamer depuis l'event si disponible
-                streamer_id = getattr(self, '_streamer_id', "")
-                streamer_name = getattr(self, '_streamer_name', "")
-                event_title = getattr(self, '_event_title', "")
-                
-                # Utiliser la stratégie adaptive
-                decision = adaptive_strategy.make_decision(
-                    outcomes=self.outcomes,
-                    balance=balance,
-                    streamer_id=streamer_id,
-                    streamer_name=streamer_name,
-                    prediction_title=event_title,
-                    base_percentage=self.settings.percentage if self.settings.percentage else 5.0,
-                    max_bet=self.settings.max_points if self.settings.max_points else 50000,
-                    min_bet=10
-                )
-                
-                if decision:
-                    self.decision["choice"] = decision.get("choice")
-                    self.decision["amount"] = decision.get("amount", 0)
-                    self.decision["id"] = decision.get("id")
-                    self.decision["reason"] = decision.get("reason", "Adaptive Strategy")
-
-                    # Applique le data_quality_multiplier (de SmartBetTiming V2)
-                    if data_quality_multiplier != 1.0:
-                        original_amount = self.decision["amount"]
-                        self.decision["amount"] = int(original_amount * data_quality_multiplier)
-                        self.decision["amount"] = max(10, self.decision["amount"])  # Min 10 points
-                        self.decision["reason"] += f" | Data quality: {data_quality_multiplier*100:.0f}%"
-
-                    return self.decision
-                else:
-                    # Skip le bet si la stratégie retourne None
-                    return self.decision
-                    
-            except ImportError as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Impossible d'importer AdaptiveBetStrategy, fallback vers CROWD_WISDOM: {e}")
-                self.settings.strategy = Strategy.CROWD_WISDOM
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Erreur dans ADAPTIVE, fallback vers CROWD_WISDOM: {e}")
-                self.settings.strategy = Strategy.CROWD_WISDOM
-        
-        # Nouvelle stratégie CROWD_WISDOM basée sur l'intelligence collective
-        if self.settings.strategy == Strategy.CROWD_WISDOM:
-            try:
-                from TwitchChannelPointsMiner.classes.entities.CrowdWisdom import (
-                    CrowdWisdomStrategy, CrowdWisdomConfig
-                )
-                
-                # Créer la stratégie avec config
-                config = CrowdWisdomConfig()
-                config.BASE_PERCENTAGE = self.settings.percentage if self.settings.percentage else 5.0
-                config.MAX_BET = self.settings.max_points if self.settings.max_points else 50000
-                config.MIN_BET = 10  # Minimum pour placer un bet
-                
-                strategy = CrowdWisdomStrategy(config)
-                
-                # Utiliser la stratégie crowd wisdom
-                # Le titre peut être passé via l'event si disponible
-                decision = strategy.should_bet(
-                    outcomes=self.outcomes,
-                    balance=balance,
-                    title=getattr(self, '_event_title', "")  # Titre de l'événement si disponible
-                )
-                
-                if decision:
-                    self.decision["choice"] = decision.get("choice")
-                    self.decision["amount"] = decision.get("amount", 0)
-                    self.decision["id"] = decision.get("id")
-                    # Stocker la raison pour le logging
-                    self.decision["reason"] = decision.get("reason", "Crowd Wisdom")
-
-                    # Applique le data_quality_multiplier (de SmartBetTiming V2)
-                    if data_quality_multiplier != 1.0:
-                        original_amount = self.decision["amount"]
-                        self.decision["amount"] = int(original_amount * data_quality_multiplier)
-                        self.decision["amount"] = max(10, self.decision["amount"])  # Min 10 points
-                        self.decision["reason"] += f" | Data quality: {data_quality_multiplier*100:.0f}%"
-
-                    return self.decision
-                else:
-                    # Skip le bet si la stratégie retourne None
-                    return self.decision
-                    
-            except ImportError as e:
-                # Fallback vers SMART si import échoue
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Impossible d'importer CrowdWisdom, fallback vers SMART: {e}")
-                self.settings.strategy = Strategy.SMART
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Erreur dans CROWD_WISDOM, fallback vers SMART: {e}")
-                self.settings.strategy = Strategy.SMART
-        
         if self.settings.strategy == Strategy.MOST_VOTED:
             self.decision["choice"] = self.__return_choice(OutcomeKeys.TOTAL_USERS)
         elif self.settings.strategy == Strategy.HIGH_ODDS:
@@ -441,28 +328,21 @@ class Bet(object):
             )
 
         if self.decision["choice"] is not None:
-            # Si CROWD_WISDOM, le montant a déjà été calculé
-            if self.settings.strategy == Strategy.CROWD_WISDOM and self.decision.get("amount", 0) > 0:
-                # Le montant est déjà calculé par CrowdWisdomStrategy
-                pass
-            else:
-                # Calcul classique pour les autres stratégies
-                #index = char_decision_as_index(self.decision["choice"])
-                index = self.decision["choice"]
-                if self.decision.get("id") is None:
-                    self.decision["id"] = self.outcomes[index]["id"]
-                self.decision["amount"] = min(
-                    int(balance * (self.settings.percentage / 100)),
-                    self.settings.max_points,
+            #index = char_decision_as_index(self.decision["choice"])
+            index = self.decision["choice"]
+            self.decision["id"] = self.outcomes[index]["id"]
+            self.decision["amount"] = min(
+                int(balance * (self.settings.percentage / 100)),
+                self.settings.max_points,
+            )
+            if (
+                self.settings.stealth_mode is True
+                and self.decision["amount"]
+                >= self.outcomes[index][OutcomeKeys.TOP_POINTS]
+            ):
+                reduce_amount = uniform(1, 5)
+                self.decision["amount"] = (
+                    self.outcomes[index][OutcomeKeys.TOP_POINTS] - reduce_amount
                 )
-                if (
-                    self.settings.stealth_mode is True
-                    and self.decision["amount"]
-                    >= self.outcomes[index][OutcomeKeys.TOP_POINTS]
-                ):
-                    reduce_amount = uniform(1, 5)
-                    self.decision["amount"] = (
-                        self.outcomes[index][OutcomeKeys.TOP_POINTS] - reduce_amount
-                    )
-                self.decision["amount"] = int(self.decision["amount"])
+            self.decision["amount"] = int(self.decision["amount"])
         return self.decision

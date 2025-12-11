@@ -182,11 +182,11 @@ twitch_miner = TwitchChannelPointsMiner(
         claim_drops=True,
         watch_streak=True,
         bet=BetSettings(
-            strategy=Strategy.ADAPTIVE,        # ✅ Stratégie ADAPTIVE (Volume check + Profiler)
-            percentage=5,                      # Parier 5% des points
-            percentage_gap=20,                 # Écart de 20% minimum (ignoré avec ADAPTIVE)
-            max_points=50000,                  # Maximum 50k points par pari
-            # filter_condition supprimé pour parier sur TOUS les événements
+            strategy=Strategy.SMART,
+            percentage=5,
+            percentage_gap=20,
+            max_points=50000,
+            minimum_points=20000,
         )
     )
 )

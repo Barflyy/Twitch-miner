@@ -24,35 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 class WebSocketsPool:
-    __slots__ = ["ws", "twitch", "streamers", "events_predictions", "optimal_timing_system", "smart_bet_timing"]
+    __slots__ = ["ws", "twitch", "streamers", "events_predictions"]
 
     def __init__(self, twitch, streamers, events_predictions):
         self.ws = []
         self.twitch = twitch
         self.streamers = streamers
         self.events_predictions = events_predictions
-        
-        # Initialise le système de timing optimal (optionnel)
-        self.optimal_timing_system = None
-        try:
-            from TwitchChannelPointsMiner.classes.entities.OptimalBetTimingSystem import OptimalBetTimingSystem
-            self.optimal_timing_system = OptimalBetTimingSystem()
-            logger.info("✅ Système de timing optimal initialisé")
-        except ImportError as e:
-            logger.debug(f"Système de timing optimal non disponible: {e}")
-        except Exception as e:
-            logger.debug(f"Erreur initialisation timing optimal: {e}")
-        
-        try:
-            from TwitchChannelPointsMiner.classes.entities.SmartBetTiming import SmartBetTiming
-            # V2 : Adaptatif automatique selon durée de prédiction et profil streamer
-            # Plus besoin de paramètres fixes, tout est calculé dynamiquement
-            self.smart_bet_timing = SmartBetTiming()
-            logger.info("✅ SmartBetTiming V2 initialisé (mode adaptatif automatique)")
-        except ImportError as e:
-            logger.error(f"❌ ERREUR: SmartBetTiming non disponible (ImportError): {e}")
-        except Exception as e:
-            logger.error(f"❌ ERREUR: Initialisation SmartBetTiming échouée: {e}", exc_info=True)
 
     """
     API Limits
@@ -318,9 +296,6 @@ class WebSocketsPool:
                                     event_dict["outcomes"],
                                 )
                                 
-                                # Injecte le système de timing optimal si disponible
-                                if ws.parent_pool.optimal_timing_system is not None:
-                                    event.optimal_timing_system = ws.parent_pool.optimal_timing_system
                                 if (
                                     ws.streamers[streamer_index].is_online
                                     and event.closing_bet_after(current_tmsp) > 0
@@ -334,105 +309,68 @@ class WebSocketsPool:
                                     ):
                                         ws.events_predictions[event_id] = event
                                         
-                                        # === SYSTÈME ADAPTATIF (SmartBetTiming) ===
-                                        if ws.parent_pool.smart_bet_timing is not None:
-                                            # Utilise le système de timing adaptatif
-                                            def bet_callback(event_arg):
-                                                try:
-                                                    logger.info(
-                                                        f"🎯 Bet callback appelé pour {event_arg.event_id} (statut: {event_arg.status})",
-                                                        extra={
-                                                            "emoji": ":dart:",
-                                                            "event": Events.BET_START,
-                                                        },
-                                                    )
-                                                    ws.twitch.make_predictions(event_arg)
-                                                except Exception as e:
-                                                    logger.error(
-                                                        f"❌ Erreur dans callback bet pour {event_arg.event_id}: {e}",
-                                                        extra={
-                                                            "emoji": ":warning:",
-                                                            "event": Events.BET_FAILED,
-                                                        },
-                                                        exc_info=True,
-                                                    )
-                                            
-                                            ws.parent_pool.smart_bet_timing.start_monitoring(
-                                                event,
-                                                bet_callback
-                                            )
-                                            logger.info(
-                                                f"🔍 Monitoring adaptatif démarré pour {event}",
-                                                extra={
-                                                    "emoji": ":mag:",
-                                                    "event": Events.BET_START,
-                                                },
-                                            )
+                                        # Calculer le délai réel selon delay_mode et delay
+                                        start_after = event.closing_bet_after(current_tmsp)
                                         
-                                        # === SYSTÈME CLASSIQUE (Timer fixe) - Fallback ===
-                                        else:
-                                            # Calculer le délai réel selon delay_mode et delay
-                                            start_after = event.get_bet_delay(current_tmsp)
-                                            
-                                            # Vérifier que le délai est valide (positif et pas trop long)
-                                            if start_after <= 0:
-                                                logger.warning(
-                                                    f"⚠️ Délai invalide ({start_after}s) pour {event}, placement immédiat",
-                                                    extra={
-                                                        "emoji": ":warning:",
-                                                        "event": Events.BET_START,
-                                                    },
-                                                )
-                                                # Placer immédiatement si délai invalide
-                                                start_after = 0.1
-                                            
-                                            # Limiter le délai à 1 heure max pour éviter les timers trop longs
-                                            if start_after > 3600:
-                                                logger.warning(
-                                                    f"⚠️ Délai trop long ({start_after}s) pour {event}, limité à 1h",
-                                                    extra={
-                                                        "emoji": ":warning:",
-                                                        "event": Events.BET_START,
-                                                    },
-                                                )
-                                                start_after = 3600
-
-                                            # Créer une fonction wrapper pour logger l'exécution
-                                            def bet_timer_callback(event_arg):
-                                                try:
-                                                    logger.info(
-                                                        f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status})",
-                                                        extra={
-                                                            "emoji": ":alarm_clock:",
-                                                            "event": Events.BET_START,
-                                                        },
-                                                    )
-                                                    ws.twitch.make_predictions(event_arg)
-                                                except Exception as e:
-                                                    logger.error(
-                                                        f"❌ Erreur dans Timer bet pour {event_arg.event_id}: {e}",
-                                                        extra={
-                                                            "emoji": ":warning:",
-                                                            "event": Events.BET_FAILED,
-                                                        },
-                                                        exc_info=True,
-                                                    )
-                                            
-                                            place_bet_thread = Timer(
-                                                start_after,
-                                                bet_timer_callback,
-                                                (ws.events_predictions[event_id],),
-                                            )
-                                            place_bet_thread.daemon = False  # Non-daemon pour s'assurer qu'il s'exécute
-                                            place_bet_thread.start()
-
-                                            logger.info(
-                                                f"⏰ Timer fixe: Place the bet after: {start_after}s ({start_after/60:.1f} min) for: {ws.events_predictions[event_id]}",
+                                        # Vérifier que le délai est valide (positif et pas trop long)
+                                        if start_after <= 0:
+                                            logger.warning(
+                                                f"⚠️ Délai invalide ({start_after}s) pour {event}, placement immédiat",
                                                 extra={
-                                                    "emoji": ":alarm_clock:",
+                                                    "emoji": ":warning:",
                                                     "event": Events.BET_START,
                                                 },
                                             )
+                                            # Placer immédiatement si délai invalide
+                                            start_after = 0.1
+                                        
+                                        # Limiter le délai à 1 heure max pour éviter les timers trop longs
+                                        if start_after > 3600:
+                                            logger.warning(
+                                                f"⚠️ Délai trop long ({start_after}s) pour {event}, limité à 1h",
+                                                extra={
+                                                    "emoji": ":warning:",
+                                                    "event": Events.BET_START,
+                                                },
+                                            )
+                                            start_after = 3600
+
+                                        # Créer une fonction wrapper pour logger l'exécution
+                                        def bet_timer_callback(event_arg):
+                                            try:
+                                                logger.info(
+                                                    f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status})",
+                                                    extra={
+                                                        "emoji": ":alarm_clock:",
+                                                        "event": Events.BET_START,
+                                                    },
+                                                )
+                                                ws.twitch.make_predictions(event_arg)
+                                            except Exception as e:
+                                                logger.error(
+                                                    f"❌ Erreur dans Timer bet pour {event_arg.event_id}: {e}",
+                                                    extra={
+                                                        "emoji": ":warning:",
+                                                        "event": Events.BET_FAILED,
+                                                    },
+                                                    exc_info=True,
+                                                )
+                                        
+                                        place_bet_thread = Timer(
+                                            start_after,
+                                            bet_timer_callback,
+                                            (ws.events_predictions[event_id],),
+                                        )
+                                        place_bet_thread.daemon = False  # Non-daemon pour s'assurer qu'il s'exécute
+                                        place_bet_thread.start()
+
+                                        logger.info(
+                                            f"Place the bet after: {start_after}s for: {ws.events_predictions[event_id]}",
+                                            extra={
+                                                "emoji": ":alarm_clock:",
+                                                "event": Events.BET_START,
+                                            },
+                                        )
                                     else:
                                         logger.info(
                                             f"{streamer} have only {streamer.channel_points} channel points and the minimum for bet is: {bet_settings.minimum_points}",
@@ -448,11 +386,6 @@ class WebSocketsPool:
                         ):
                             ws.events_predictions[event_id].status = event_status
                             
-                            # Si la prédiction est fermée, arrête le monitoring
-                            if event_status != "ACTIVE":
-                                if ws.parent_pool.smart_bet_timing is not None:
-                                    ws.parent_pool.smart_bet_timing.stop_monitoring(event_id)
-                            
                             # Game over we can't update anymore the values... The bet was placed!
                             if (
                                 ws.events_predictions[event_id].bet_placed is False
@@ -461,9 +394,6 @@ class WebSocketsPool:
                                 ws.events_predictions[event_id].bet.update_outcomes(
                                     event_dict["outcomes"]
                                 )
-                                
-                                # Les données sont mises à jour, SmartBetTiming les utilisera dans sa prochaine vérification
-                                # Pas besoin de faire quoi que ce soit de plus, le monitoring loop les détectera
 
                     elif message.topic == "predictions-user-v1":
                         event_id = message.data["prediction"]["event_id"]
@@ -477,28 +407,6 @@ class WebSocketsPool:
                                     message.data["prediction"]["result"]
                                 )
                                 
-                                # Log les résultats pour l'apprentissage du système de timing optimal
-                                if ws.parent_pool.optimal_timing_system is not None:
-                                    try:
-                                        streamer_id = str(event_prediction.streamer.channel_id) if hasattr(event_prediction.streamer, 'channel_id') else ""
-                                        streamer_name = event_prediction.streamer.username if hasattr(event_prediction.streamer, 'username') else ""
-                                        
-                                        announced_duration = event_prediction.prediction_window_seconds
-                                        actual_duration = (time.time() - event_prediction.prediction_start_time)
-                                        
-                                        ws.parent_pool.optimal_timing_system.log_prediction_result(
-                                            streamer_id=streamer_id,
-                                            streamer_name=streamer_name,
-                                            prediction_id=event_prediction.event_id,
-                                            announced_duration=int(announced_duration),
-                                            actual_duration=int(actual_duration)
-                                        )
-                                        
-                                        # Nettoie les données de la prédiction
-                                        ws.parent_pool.optimal_timing_system.cleanup_prediction(event_prediction.event_id)
-                                    except Exception as e:
-                                        logger.debug(f"Erreur lors du logging des résultats pour timing optimal: {e}")
-
                                 decision = event_prediction.bet.get_decision()
                                 choice = event_prediction.bet.decision["choice"]
 
@@ -506,10 +414,8 @@ class WebSocketsPool:
                                     (
                                         f"{event_prediction} - Decision: {choice}: {decision['title']} "
                                         f"({decision['color']}) - Result: {event_prediction.result['string']}\n"
-                                        f"📝 Strategy: {decision.get('reason', 'Unknown')}\n"
                                         f"📊 Odds: {decision.get('odds', 0)} ({decision.get('odds_percentage', 0)}%)\n"
                                         f"👥 Users: {decision.get('percentage_users', 0)}% ({decision.get('total_users', 0)})\n"
-                                        f"🎯 Confidence: {decision.get('confidence', 'N/A')}"
                                     ),
                                     extra={
                                         "emoji": ":bar_chart:",
@@ -523,55 +429,6 @@ class WebSocketsPool:
                                     "PREDICTION", points["gained"]
                                 )
                                 
-                                # Logger la prédiction dans le profiler (si disponible)
-                                try:
-                                    from TwitchChannelPointsMiner.classes.entities.StreamerPredictionProfiler import (
-                                        StreamerPredictionProfiler
-                                    )
-                                    profiler = StreamerPredictionProfiler()
-                                    
-                                    # Détermine le gagnant (0 ou 1)
-                                    winning_outcome_id = message.data["prediction"].get("winning_outcome_id")
-                                    winner = None
-                                    if winning_outcome_id:
-                                        # Trouve l'index de l'outcome gagnant
-                                        for idx, outcome in enumerate(event_prediction.bet.outcomes):
-                                            if outcome.get("id") == winning_outcome_id:
-                                                winner = idx
-                                                break
-                                    
-                                    # Prépare les données pour le profiler
-                                    prediction_data = {
-                                        'streamer_id': str(event_prediction.streamer.channel_id),
-                                        'streamer_name': event_prediction.streamer.username,
-                                        'title': event_prediction.title,
-                                        'game': '',  # Pas disponible dans EventPrediction
-                                        'outcomes': [
-                                            {
-                                                'title': event_prediction.bet.outcomes[0].get('title', ''),
-                                                'percentage_users': event_prediction.bet.outcomes[0].get('percentage_users', 0),
-                                                'odds': event_prediction.bet.outcomes[0].get('odds', 0)
-                                            },
-                                            {
-                                                'title': event_prediction.bet.outcomes[1].get('title', ''),
-                                                'percentage_users': event_prediction.bet.outcomes[1].get('percentage_users', 0),
-                                                'odds': event_prediction.bet.outcomes[1].get('odds', 0)
-                                            }
-                                        ],
-                                        'winner': winner,
-                                        'bet_placed': 1 if event_prediction.bet_placed else 0,
-                                        'bet_choice': choice if event_prediction.bet_placed else None,
-                                        'bet_amount': event_prediction.bet.decision.get('amount', 0) if event_prediction.bet_placed else 0,
-                                        'payout': points.get('won', 0) if event_prediction.result['type'] == 'WIN' else 0
-                                    }
-                                    
-                                    profiler.log_prediction(prediction_data)
-                                    profiler.close()
-                                    
-                                except Exception as e:
-                                    # Ne pas bloquer si le profiler échoue
-                                    logger.debug(f"Erreur lors du logging dans le profiler: {e}")
-
                                 # Remove duplicate history records from previous message sent in community-points-user-v1
                                 if event_prediction.result["type"] == "REFUND":
                                     ws.streamers[streamer_index].update_history(
@@ -599,9 +456,6 @@ class WebSocketsPool:
                                 event_prediction.bet_confirmed = True
                                 event_prediction.bet_placed = True
                                 
-                                # Arrête le monitoring SmartBetTiming si actif
-                                if ws.parent_pool.smart_bet_timing is not None:
-                                    ws.parent_pool.smart_bet_timing.stop_monitoring(event_prediction.event_id)
                                 # Analytics switch
                                 if Settings.enable_analytics is True:
                                     ws.streamers[streamer_index].persistent_annotations(
