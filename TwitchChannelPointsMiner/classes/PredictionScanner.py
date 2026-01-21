@@ -5,11 +5,26 @@ PredictionScanner - Scanne tous les streams actifs pour détecter les prédictio
 import logging
 import asyncio
 import time
+import json
+import os
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from TwitchChannelPointsMiner.classes.entities.StreamerPredictionProfiler import StreamerPredictionProfiler
 from TwitchChannelPointsMiner.classes.entities.AdaptiveBetStrategy import AdaptiveBetStrategy
 
 logger = logging.getLogger(__name__)
+
+# Instance globale pour accès depuis l'API
+_scanner_instance = None
+
+def get_scanner_instance():
+    """Récupère l'instance globale du scanner."""
+    return _scanner_instance
+
+def set_scanner_instance(scanner):
+    """Définit l'instance globale du scanner."""
+    global _scanner_instance
+    _scanner_instance = scanner
 
 
 class PredictionScanner:

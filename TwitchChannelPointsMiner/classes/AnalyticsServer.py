@@ -522,6 +522,94 @@ class AnalyticsServer(Thread):
             except Exception as e:
                 logger.error(f"Error getting active bets: {e}")
                 return jsonify({"predictions": []})
+        
+        @self.app.route("/api/recovery_scan", methods=["POST"])
+        def api_recovery_scan():
+            """
+            Lance un scan de récupération pour synchroniser les prédictions.
+            Scanne tous les streams en ligne pour détecter les prédictions manquées.
+            """
+            try:
+                from TwitchChannelPointsMiner.classes.PredictionScanner import get_scanner_instance
+                
+                scanner = get_scanner_instance()
+                
+                if scanner is None:
+                    # Scanner pas disponible, faire une synchronisation basique
+                    logger.warning("Scanner non disponible, synchronisation basique...")
+                    
+                    data_dir = os.getenv("DATA_DIR", ".")
+                    bot_data_path = os.path.join(data_dir, "bot_data.json")
+                    
+                    if os.path.exists(bot_data_path):
+                        with open(bot_data_path, 'r') as f:
+                            data = json.load(f)
+                        
+                        # Nettoyer les prédictions obsolètes (plus vieilles que 30 min sans pari)
+                        current_active = data.get('active_predictions', [])
+                        cleaned = []
+                        removed = []
+                        
+                        for pred in current_active:
+                            # Garder si on a un pari placé
+                            if pred.get('our_bet'):
+                                cleaned.append(pred)
+                            else:
+                                removed.append(pred.get('title', 'Unknown'))
+                        
+                        data['active_predictions'] = cleaned
+                        
+                        with open(bot_data_path, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        
+                        return jsonify({
+                            'success': True,
+                            'mode': 'basic_cleanup',
+                            'removed': removed,
+                            'total_active': len(cleaned),
+                            'message': 'Scanner non disponible - Nettoyage basique effectué'
+                        })
+                    
+                    return jsonify({
+                        'success': False,
+                        'error': 'Scanner et données non disponibles'
+                    })
+                
+                # Utiliser le scanner complet
+                result = scanner.recovery_scan()
+                return jsonify(result)
+                
+            except Exception as e:
+                logger.error(f"Error during recovery scan: {e}", exc_info=True)
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+        
+        @self.app.route("/api/scanner/status", methods=["GET"])
+        def api_scanner_status():
+            """Récupère le status du scanner."""
+            try:
+                from TwitchChannelPointsMiner.classes.PredictionScanner import get_scanner_instance
+                
+                scanner = get_scanner_instance()
+                
+                if scanner:
+                    stats = scanner.get_statistics()
+                    return jsonify({
+                        'available': True,
+                        **stats
+                    })
+                
+                return jsonify({
+                    'available': False,
+                    'message': 'Scanner non initialisé'
+                })
+            except Exception as e:
+                return jsonify({
+                    'available': False,
+                    'error': str(e)
+                })
 
     def run(self):
         logger.info(

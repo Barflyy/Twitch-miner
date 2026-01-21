@@ -1065,6 +1065,7 @@
             <div class="panel-section">
                 <div class="panel-section-title">⚡ Actions</div>
                 <button class="action-btn primary" onclick="saveAllSettings()">💾 Sauvegarder</button>
+                <button class="action-btn" onclick="recoveryScan()" id="recovery-btn" style="background: linear-gradient(135deg, #0a84ff 0%, #00d4aa 100%);">🔄 Sync Prédictions</button>
                 <button class="action-btn danger" onclick="resetStats()">🗑️ Reset Stats</button>
             </div>
         </div>
@@ -1282,6 +1283,39 @@
                     loadData();
                 }
             } catch (e) {}
+        }
+
+        async function recoveryScan() {
+            const btn = document.getElementById('recovery-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Scan en cours...';
+            btn.disabled = true;
+            
+            try {
+                const res = await fetch('/api/recovery_scan', { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    let msg = `Scan terminé: ${data.streams_scanned || 0} streams analysés`;
+                    
+                    if (data.added && data.added.length > 0) {
+                        msg += `, ${data.added.length} prédiction(s) trouvée(s)`;
+                    }
+                    if (data.removed && data.removed.length > 0) {
+                        msg += `, ${data.removed.length} supprimée(s)`;
+                    }
+                    
+                    showToast(msg, 'success');
+                    loadData(); // Rafraîchir les données
+                } else {
+                    showToast('Erreur: ' + (data.error || 'Échec du scan'), 'error');
+                }
+            } catch (e) {
+                showToast('Erreur de connexion', 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
         async function loadData() {

@@ -21,6 +21,7 @@ from TwitchChannelPointsMiner.classes.Exceptions import StreamerDoesNotExistExce
 from TwitchChannelPointsMiner.classes.Settings import FollowersOrder, Priority, Settings
 from TwitchChannelPointsMiner.classes.Twitch import Twitch
 from TwitchChannelPointsMiner.classes.WebSocketsPool import WebSocketsPool
+from TwitchChannelPointsMiner.classes.PredictionScanner import PredictionScanner, set_scanner_instance
 from TwitchChannelPointsMiner.logger import LoggerSettings, configure_loggers
 from TwitchChannelPointsMiner.utils import (
     _millify,
@@ -515,6 +516,19 @@ class TwitchChannelPointsMiner:
                 streamers=self.streamers,
                 events_predictions=self.events_predictions,
             )
+            
+            # Initialiser le PredictionScanner pour le scan de récupération
+            try:
+                self.prediction_scanner = PredictionScanner(
+                    twitch_instance=self.twitch,
+                    streamers_list=self.streamers,
+                    events_predictions_dict=self.events_predictions
+                )
+                set_scanner_instance(self.prediction_scanner)
+                logger.info("🔍 PredictionScanner initialisé pour les scans de récupération")
+            except Exception as e:
+                logger.warning(f"Impossible d'initialiser le PredictionScanner: {e}")
+                self.prediction_scanner = None
 
             # Subscribe to community-points-user. Get update for points spent or gains
             user_id = self.twitch.twitch_login.get_user_id()
