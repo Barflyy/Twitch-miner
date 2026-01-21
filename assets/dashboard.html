@@ -968,6 +968,21 @@
             animation: pulse-dot 1.5s ease-in-out infinite;
         }
 
+        .live-pulse.locked {
+            background: rgba(255, 214, 10, 0.15);
+            color: var(--accent-gold);
+        }
+
+        .live-pulse.locked::before {
+            background: var(--accent-gold);
+            animation: pulse-dot-slow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot-slow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
         @keyframes pulse-dot {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(0.8); }
@@ -1403,6 +1418,8 @@
                             </div>
                             ${p.status === 'bet_placed' ? 
                                 '<span class="live-pulse">● PARI PLACÉ</span>' :
+                                p.status === 'locked' ?
+                                '<span class="live-pulse locked">⏳ EN ATTENTE</span>' :
                                 `<div class="prediction-timer ${p.time_remaining < 30 ? 'urgent' : ''}">${p.time_remaining}s</div>`
                             }
                         </div>
