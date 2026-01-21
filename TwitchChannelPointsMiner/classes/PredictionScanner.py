@@ -52,6 +52,7 @@ class PredictionScanner:
         """Récupère la liste des streams actifs."""
         active_streams = []
         
+        # D'abord essayer avec la liste en mémoire
         for streamer in self.streamers:
             if hasattr(streamer, 'is_online') and streamer.is_online:
                 active_streams.append({
@@ -59,6 +60,29 @@ class PredictionScanner:
                     'channel_name': streamer.username,
                     'streamer': streamer
                 })
+        
+        # Si aucun stream trouvé, utiliser bot_data.json en fallback
+        if not active_streams:
+            try:
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    streamers_data = data.get('streamers', {})
+                    for name, sdata in streamers_data.items():
+                        if sdata.get('online', False):
+                            active_streams.append({
+                                'channel_id': str(sdata.get('channel_id', '')),
+                                'channel_name': name,
+                                'streamer': None
+                            })
+                    
+                    logger.debug(f"Fallback bot_data.json: {len(active_streams)} streams en ligne")
+            except Exception as e:
+                logger.debug(f"Erreur lecture bot_data.json: {e}")
         
         return active_streams
 
@@ -255,3 +279,143 @@ class PredictionScanner:
             'running': self.running
         }
 
+    def sync_predictions_to_bot_data(self) -> Dict[str, Any]:
+        """
+        Synchronise les prédictions actives avec bot_data.json.
+        Utile pour récupérer après un bug ou une désynchronisation.
+        
+        Returns:
+            Dict avec le résultat de la synchronisation
+        """
+        try:
+            from TwitchChannelPointsMiner.classes.WebSocketsPool import update_active_prediction, atomic_write_json, _bot_data_lock
+            
+            data_dir = os.getenv("DATA_DIR", ".")
+            bot_data_path = os.path.join(data_dir, "bot_data.json")
+            
+            # Charger les données actuelles
+            with _bot_data_lock:
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                else:
+                    data = {'streamers': {}, 'bet_history': [], 'active_predictions': []}
+            
+            # IDs des prédictions dans bot_data
+            bot_data_pred_ids = {p.get('event_id') for p in data.get('active_predictions', [])}
+            
+            # IDs des prédictions dans events_predictions (mémoire)
+            memory_pred_ids = set(self.events_predictions.keys())
+            
+            synced = []
+            removed = []
+            added = []
+            
+            # 1. Scanner tous les streams en ligne pour trouver les prédictions réelles
+            active_streams = self.get_active_streams()
+            real_predictions = {}
+            
+            logger.info(f"🔍 Scan de récupération: {len(active_streams)} streams en ligne")
+            
+            for stream in active_streams:
+                try:
+                    prediction = self.check_prediction(stream['channel_id'])
+                    if prediction and prediction.get('status') in ['ACTIVE', 'LOCKED']:
+                        real_predictions[prediction['id']] = {
+                            'prediction': prediction,
+                            'streamer': stream['channel_name'],
+                            'streamer_obj': stream['streamer']
+                        }
+                except Exception as e:
+                    logger.debug(f"Erreur scan {stream['channel_name']}: {e}")
+            
+            # 2. Supprimer les prédictions obsolètes de bot_data
+            current_active = data.get('active_predictions', [])
+            updated_active = []
+            
+            for pred in current_active:
+                pred_id = pred.get('event_id')
+                # Garder si c'est une vraie prédiction ou si on a un pari placé
+                if pred_id in real_predictions or pred.get('our_bet'):
+                    updated_active.append(pred)
+                else:
+                    removed.append(pred.get('title', pred_id))
+                    logger.info(f"🗑️ Suppression prédiction obsolète: {pred.get('title', pred_id)}")
+            
+            # 3. Ajouter les nouvelles prédictions trouvées
+            for pred_id, pred_data in real_predictions.items():
+                # Vérifier si cette prédiction est déjà dans bot_data
+                exists = any(p.get('event_id') == pred_id for p in updated_active)
+                
+                if not exists:
+                    prediction = pred_data['prediction']
+                    streamer = pred_data['streamer']
+                    
+                    # Construire les outcomes
+                    outcomes = []
+                    for outcome in prediction.get('outcomes', []):
+                        total_users = outcome.get('totalUsers', 0)
+                        total_points = outcome.get('totalPoints', 0)
+                        outcomes.append({
+                            'title': outcome.get('title', ''),
+                            'color': outcome.get('color', 'BLUE'),
+                            'users': total_users,
+                            'points': total_points,
+                            'odds': round(1 / (outcome.get('oddsPercentage', 50) / 100), 2) if outcome.get('oddsPercentage', 0) > 0 else 1,
+                            'percentage': outcome.get('percentageUsers', 50)
+                        })
+                    
+                    new_pred = {
+                        'event_id': pred_id,
+                        'streamer': streamer,
+                        'title': prediction.get('title', ''),
+                        'outcomes': outcomes,
+                        'time_remaining': prediction.get('prediction_window_seconds', 0),
+                        'total_time': prediction.get('prediction_window_seconds', 120),
+                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'status': 'active' if prediction.get('status') == 'ACTIVE' else 'locked',
+                        'our_bet': None
+                    }
+                    
+                    updated_active.append(new_pred)
+                    added.append(f"{streamer}: {prediction.get('title', '')}")
+                    logger.info(f"➕ Nouvelle prédiction ajoutée: {streamer} - {prediction.get('title', '')}")
+                else:
+                    synced.append(pred_id)
+            
+            # 4. Sauvegarder
+            data['active_predictions'] = updated_active
+            
+            with _bot_data_lock:
+                atomic_write_json(bot_data_path, data)
+            
+            result = {
+                'success': True,
+                'streams_scanned': len(active_streams),
+                'predictions_found': len(real_predictions),
+                'synced': len(synced),
+                'added': added,
+                'removed': removed,
+                'total_active': len(updated_active),
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            logger.info(f"✅ Synchronisation terminée: {len(added)} ajoutées, {len(removed)} supprimées, {len(synced)} synchronisées")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la synchronisation: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+    def recovery_scan(self) -> Dict[str, Any]:
+        """
+        Effectue un scan complet de récupération.
+        Alias pour sync_predictions_to_bot_data avec logging supplémentaire.
+        """
+        logger.info("🔄 Démarrage du scan de récupération...")
+        return self.sync_predictions_to_bot_data()

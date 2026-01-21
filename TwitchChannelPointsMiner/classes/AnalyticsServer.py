@@ -531,53 +531,75 @@ class AnalyticsServer(Thread):
             """
             try:
                 from TwitchChannelPointsMiner.classes.PredictionScanner import get_scanner_instance
+                from datetime import datetime as dt
+                import requests
                 
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                # Charger les données
+                if not os.path.exists(bot_data_path):
+                    return jsonify({'success': False, 'error': 'Pas de données'})
+                
+                with open(bot_data_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Récupérer les streamers en ligne depuis bot_data.json
+                streamers_data = data.get('streamers', {})
+                online_streamers = [
+                    {'name': name, 'data': sdata}
+                    for name, sdata in streamers_data.items()
+                    if sdata.get('online', False)
+                ]
+                
+                logger.info(f"🔍 Scan de récupération: {len(online_streamers)} streams en ligne")
+                
+                # Essayer d'utiliser le scanner si disponible
                 scanner = get_scanner_instance()
                 
-                if scanner is None:
-                    # Scanner pas disponible, faire une synchronisation basique
-                    logger.warning("Scanner non disponible, synchronisation basique...")
-                    
-                    data_dir = os.getenv("DATA_DIR", ".")
-                    bot_data_path = os.path.join(data_dir, "bot_data.json")
-                    
-                    if os.path.exists(bot_data_path):
-                        with open(bot_data_path, 'r') as f:
-                            data = json.load(f)
-                        
-                        # Nettoyer les prédictions obsolètes (plus vieilles que 30 min sans pari)
-                        current_active = data.get('active_predictions', [])
-                        cleaned = []
-                        removed = []
-                        
-                        for pred in current_active:
-                            # Garder si on a un pari placé
-                            if pred.get('our_bet'):
+                if scanner and hasattr(scanner, 'twitch'):
+                    # Scanner disponible - faire un scan complet
+                    result = scanner.recovery_scan()
+                    return jsonify(result)
+                
+                # Scanner non disponible - faire un nettoyage basique
+                logger.warning("Scanner non disponible, nettoyage basique...")
+                
+                current_active = data.get('active_predictions', [])
+                cleaned = []
+                removed = []
+                
+                for pred in current_active:
+                    # Garder si on a un pari placé (en attente de résultat)
+                    if pred.get('our_bet'):
+                        cleaned.append(pred)
+                    # Garder si la prédiction est récente (moins de 10 min)
+                    elif pred.get('created_at'):
+                        try:
+                            created = dt.strptime(pred['created_at'], '%Y-%m-%d %H:%M:%S')
+                            age_minutes = (dt.now() - created).total_seconds() / 60
+                            if age_minutes < 10:
                                 cleaned.append(pred)
                             else:
                                 removed.append(pred.get('title', 'Unknown'))
-                        
-                        data['active_predictions'] = cleaned
-                        
-                        with open(bot_data_path, 'w') as f:
-                            json.dump(data, f, indent=2)
-                        
-                        return jsonify({
-                            'success': True,
-                            'mode': 'basic_cleanup',
-                            'removed': removed,
-                            'total_active': len(cleaned),
-                            'message': 'Scanner non disponible - Nettoyage basique effectué'
-                        })
-                    
-                    return jsonify({
-                        'success': False,
-                        'error': 'Scanner et données non disponibles'
-                    })
+                        except:
+                            removed.append(pred.get('title', 'Unknown'))
+                    else:
+                        removed.append(pred.get('title', 'Unknown'))
                 
-                # Utiliser le scanner complet
-                result = scanner.recovery_scan()
-                return jsonify(result)
+                data['active_predictions'] = cleaned
+                
+                with open(bot_data_path, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                return jsonify({
+                    'success': True,
+                    'mode': 'basic_cleanup',
+                    'streams_scanned': len(online_streamers),
+                    'removed': removed,
+                    'total_active': len(cleaned),
+                    'message': f'{len(online_streamers)} streams en ligne - Nettoyage effectué ({len(removed)} supprimées)'
+                })
                 
             except Exception as e:
                 logger.error(f"Error during recovery scan: {e}", exc_info=True)
