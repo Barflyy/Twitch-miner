@@ -129,7 +129,7 @@ class Discord(object):
                     streamer_data['total_earned'] = streamer_data.get('total_earned', 0) + points_gained  # Total depuis le début
             
             elif event == Events.BET_START:
-                streamer_data['bets_placed'] = streamer_data.get('bets_placed', 0) + 1
+                # bets_placed est maintenant incrémenté dans WebSocketsPool.py lors du prediction-made
                 # Essayer d'extraire le montant misé
                 bet_amount_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:K|k|M|m)?\s*(?:channel\s*)?points', message, re.IGNORECASE)
                 if bet_amount_match:

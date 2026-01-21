@@ -783,12 +783,24 @@ class WebSocketsPool:
                                 })
                                 logger.info(f"🎲 Pari placé sur {streamer_username}: {bet_amount} points")
                                 
+                                # Préparer les données des outcomes
+                                outcomes_data = []
+                                for i, outcome in enumerate(event_prediction.bet.outcomes):
+                                    outcomes_data.append({
+                                        'title': outcome.get('title', f'Option {i+1}'),
+                                        'color': outcome.get('color', 'BLUE' if i == 0 else 'PINK'),
+                                        'users': outcome.get('total_users', 0),
+                                        'points': outcome.get('total_points', 0),
+                                        'odds': outcome.get('odds', 0),
+                                        'percentage': outcome.get('percentage_users', 0)
+                                    })
+                                
                                 # Mettre à jour la prédiction active avec notre pari
                                 update_active_prediction({
                                     'event_id': event_id,
                                     'streamer': streamer_username,
                                     'title': event_prediction.title,
-                                    'outcomes': [],
+                                    'outcomes': outcomes_data,
                                     'time_remaining': 0,
                                     'total_time': event_prediction.prediction_window_seconds,
                                     'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

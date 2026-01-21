@@ -410,6 +410,8 @@
             border-radius: 12px;
             padding: 14px;
             transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
         }
 
         .outcome.blue { border-left: 3px solid var(--blue); }
@@ -417,6 +419,24 @@
         .outcome.selected {
             background: rgba(255, 214, 10, 0.1);
             border-color: var(--accent-gold);
+        }
+        .outcome.selected .outcome-title { color: var(--accent-gold); }
+
+        .outcome-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            opacity: 0.15;
+            transition: width 0.5s ease;
+        }
+        .outcome.blue .outcome-bar { background: var(--blue); }
+        .outcome.pink .outcome-bar { background: var(--pink); }
+        .outcome.selected .outcome-bar { background: var(--accent-gold); opacity: 0.2; }
+
+        .outcome-content {
+            position: relative;
+            z-index: 1;
         }
 
         .outcome-title {
@@ -444,27 +464,96 @@
             font-family: 'JetBrains Mono', monospace;
         }
 
+        .outcome-percent {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .outcome.blue .outcome-percent { color: var(--blue); }
+        .outcome.pink .outcome-percent { color: var(--pink); }
+        .outcome.selected .outcome-percent { color: var(--accent-gold); }
+
+        .prediction-total-stats {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            background: var(--glass);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .prediction-total-stats span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .prediction-total-stats .value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+
         .our-bet {
-            background: linear-gradient(135deg, rgba(255, 214, 10, 0.1), rgba(255, 214, 10, 0.05));
+            background: linear-gradient(135deg, rgba(255, 214, 10, 0.15), rgba(255, 214, 10, 0.05));
             border: 1px solid var(--accent-gold);
             border-radius: 10px;
-            padding: 12px;
+            padding: 14px;
+        }
+
+        .our-bet-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            margin-bottom: 10px;
         }
 
         .our-bet-label {
             font-size: 12px;
             color: var(--accent-gold);
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .our-bet-amount {
+        .our-bet-choice {
+            background: rgba(255, 214, 10, 0.2);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-gold);
+        }
+
+        .our-bet-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .our-bet-stat {
+            text-align: center;
+        }
+
+        .our-bet-stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .our-bet-stat-value {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
         }
+
+        .our-bet-stat-value.amount { color: var(--accent-gold); }
+        .our-bet-stat-value.odds { color: var(--accent-primary); }
+        .our-bet-stat-value.potential { color: var(--success); }
 
         /* Bet History Card */
         .bet-card {
@@ -1291,38 +1380,81 @@
                 const hasBet = p.our_bet !== null;
                 const outcomes = p.outcomes || [];
                 
+                // Calculer les totaux
+                const totalUsers = outcomes.reduce((sum, o) => sum + (o.users || 0), 0);
+                const totalPoints = outcomes.reduce((sum, o) => sum + (o.points || 0), 0);
+                
+                // Calculer les pourcentages
+                const outcomesWithPercent = outcomes.map(o => ({
+                    ...o,
+                    percent: totalPoints > 0 ? ((o.points || 0) / totalPoints * 100) : 0,
+                    userPercent: totalUsers > 0 ? ((o.users || 0) / totalUsers * 100) : 0
+                }));
+                
+                // Gain potentiel
+                const potentialWin = hasBet ? Math.round(p.our_bet.amount * (p.our_bet.odds || 1)) : 0;
+                
                 return `
                     <div class="prediction-card ${hasBet ? 'has-bet' : ''}">
                         <div class="prediction-header">
                             <div>
-                                <div class="prediction-streamer">${p.streamer}</div>
+                                <div class="prediction-streamer">${p.streamer.toUpperCase()}</div>
                                 <div class="prediction-title">${p.title}</div>
                             </div>
                             ${p.status === 'bet_placed' ? 
-                                '<span class="live-pulse">Pari placé</span>' :
+                                '<span class="live-pulse">● PARI PLACÉ</span>' :
                                 `<div class="prediction-timer ${p.time_remaining < 30 ? 'urgent' : ''}">${p.time_remaining}s</div>`
                             }
                         </div>
-                        ${outcomes.length > 0 ? `
+                        
+                        ${totalUsers > 0 || totalPoints > 0 ? `
+                        <div class="prediction-total-stats">
+                            <span>👥 <span class="value">${formatNumber(totalUsers)}</span> votants</span>
+                            <span>💎 <span class="value">${formatNumber(totalPoints)}</span> points</span>
+                        </div>
+                        ` : ''}
+                        
+                        ${outcomesWithPercent.length > 0 ? `
                         <div class="prediction-outcomes">
-                            ${outcomes.map((o, i) => `
+                            ${outcomesWithPercent.map((o, i) => `
                                 <div class="outcome ${o.color?.toLowerCase() || (i === 0 ? 'blue' : 'pink')} ${hasBet && p.our_bet.choice === i ? 'selected' : ''}">
-                                    <div class="outcome-title">
-                                        ${hasBet && p.our_bet.choice === i ? '<span class="check">✓</span>' : ''}
-                                        ${o.title}
-                                    </div>
-                                    <div class="outcome-stats">
-                                        <span>${formatNumber(o.users)} votants</span>
-                                        <span class="odds">${o.odds ? o.odds.toFixed(2) + 'x' : '—'}</span>
+                                    <div class="outcome-bar" style="width: ${o.percent || 50}%"></div>
+                                    <div class="outcome-content">
+                                        <div class="outcome-percent">${o.percent > 0 ? o.percent.toFixed(0) + '%' : '—'}</div>
+                                        <div class="outcome-title">
+                                            ${hasBet && p.our_bet.choice === i ? '<span class="check">✓</span>' : ''}
+                                            ${o.title}
+                                        </div>
+                                        <div class="outcome-stats">
+                                            <span>${formatNumber(o.users || 0)} votants • ${formatNumber(o.points || 0)} pts</span>
+                                            <span class="odds">${o.odds ? o.odds.toFixed(2) + 'x' : '—'}</span>
+                                        </div>
                                     </div>
                                 </div>
                             `).join('')}
                         </div>
                         ` : ''}
+                        
                         ${hasBet ? `
                         <div class="our-bet">
-                            <span class="our-bet-label">🎯 Notre pari</span>
-                            <span class="our-bet-amount">${formatNumber(p.our_bet.amount)} pts @ ${p.our_bet.odds?.toFixed(2) || '?'}x</span>
+                            <div class="our-bet-header">
+                                <span class="our-bet-label">🎯 NOTRE PARI</span>
+                                <span class="our-bet-choice">${p.our_bet.choice_title || 'Option ' + ((p.our_bet.choice || 0) + 1)}</span>
+                            </div>
+                            <div class="our-bet-details">
+                                <div class="our-bet-stat">
+                                    <div class="our-bet-stat-label">Mise</div>
+                                    <div class="our-bet-stat-value amount">${formatNumber(p.our_bet.amount)}</div>
+                                </div>
+                                <div class="our-bet-stat">
+                                    <div class="our-bet-stat-label">Cote</div>
+                                    <div class="our-bet-stat-value odds">${p.our_bet.odds?.toFixed(2) || '?'}x</div>
+                                </div>
+                                <div class="our-bet-stat">
+                                    <div class="our-bet-stat-label">Gain potentiel</div>
+                                    <div class="our-bet-stat-value potential">+${formatNumber(potentialWin)}</div>
+                                </div>
+                            </div>
                         </div>
                         ` : ''}
                     </div>
