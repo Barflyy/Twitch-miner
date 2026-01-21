@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import time
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from threading import Thread, Timer, Lock
@@ -25,6 +26,28 @@ logger = logging.getLogger(__name__)
 
 # Lock pour éviter les problèmes de concurrence sur bot_data.json
 _bot_data_lock = Lock()
+
+
+def atomic_write_json(filepath: str, data: dict):
+    """
+    Écrit un fichier JSON de manière atomique pour éviter la corruption.
+    Écrit d'abord dans un fichier temporaire, puis renomme.
+    """
+    dir_name = os.path.dirname(filepath) or "."
+    # Créer un fichier temporaire dans le même répertoire
+    fd, tmp_path = tempfile.mkstemp(suffix='.json', dir=dir_name)
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(data, f, indent=2)
+        # Renommer atomiquement (sur Unix, c'est atomique)
+        os.replace(tmp_path, filepath)
+    except Exception as e:
+        # En cas d'erreur, supprimer le fichier temporaire
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        raise e
 
 
 def add_bet_to_history(bet_data: dict):
@@ -64,8 +87,7 @@ def add_bet_to_history(bet_data: dict):
             if len(data['bet_history']) > 100:
                 data['bet_history'] = data['bet_history'][-100:]
             
-            with open(bot_data_path, 'w') as f:
-                json.dump(data, f, indent=2)
+            atomic_write_json(bot_data_path, data)
                 
     except Exception as e:
         logger.debug(f"Erreur ajout historique pari: {e}")
@@ -111,8 +133,7 @@ def update_active_prediction(prediction_data: dict, remove: bool = False):
             if not remove:
                 data['active_predictions'].append(prediction_data)
             
-            with open(bot_data_path, 'w') as f:
-                json.dump(data, f, indent=2)
+            atomic_write_json(bot_data_path, data)
                 
     except Exception as e:
         logger.debug(f"Erreur mise à jour prédiction active: {e}")
@@ -195,9 +216,8 @@ def update_bot_data(streamer_name: str, updates: dict):
             # Timestamp de mise à jour
             streamer_data['last_update'] = time.strftime('%Y-%m-%d %H:%M:%S')
             
-            # Sauvegarder
-            with open(bot_data_path, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Sauvegarder de manière atomique
+            atomic_write_json(bot_data_path, data)
                 
     except Exception as e:
         logger.debug(f"Erreur mise à jour bot_data.json: {e}")

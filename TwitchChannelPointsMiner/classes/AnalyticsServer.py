@@ -477,13 +477,21 @@ class AnalyticsServer(Thread):
                 
                 if os.path.exists(bot_data_path):
                     with open(bot_data_path, 'r') as f:
-                        data = json.load(f)
+                        content = f.read()
                     
+                    # Vérifier si le contenu est vide
+                    if not content.strip():
+                        return jsonify({"bets": []})
+                    
+                    data = json.loads(content)
                     bets = data.get("bet_history", [])
                     # Retourne les 50 derniers paris
                     return jsonify({"bets": bets[-50:][::-1]})
                 
                 return jsonify({"bets": []})
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing JSON in bet_history: {e}")
+                return jsonify({"bets": [], "error": "JSON parsing error, file may be updating"})
             except Exception as e:
                 logger.error(f"Error getting bet history: {e}")
                 return jsonify({"bets": []})
@@ -497,12 +505,20 @@ class AnalyticsServer(Thread):
                 
                 if os.path.exists(bot_data_path):
                     with open(bot_data_path, 'r') as f:
-                        data = json.load(f)
+                        content = f.read()
                     
+                    # Vérifier si le contenu est vide
+                    if not content.strip():
+                        return jsonify({"predictions": []})
+                    
+                    data = json.loads(content)
                     active = data.get("active_predictions", [])
                     return jsonify({"predictions": active})
                 
                 return jsonify({"predictions": []})
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing JSON in active_bets: {e}")
+                return jsonify({"predictions": [], "error": "JSON parsing error, file may be updating"})
             except Exception as e:
                 logger.error(f"Error getting active bets: {e}")
                 return jsonify({"predictions": []})
