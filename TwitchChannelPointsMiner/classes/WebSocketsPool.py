@@ -662,6 +662,19 @@ class WebSocketsPool:
                         ):
                             ws.events_predictions[event_id].status = event_status
                             
+                            # Si l'événement est verrouillé/terminé et qu'on n'a pas parié, supprimer de l'affichage
+                            if event_status in ["LOCKED", "RESOLVED", "CANCELED"]:
+                                if ws.events_predictions[event_id].bet_placed is False:
+                                    # Supprimer la prédiction active (on n'a pas parié)
+                                    update_active_prediction({'event_id': event_id}, remove=True)
+                                    logger.debug(f"🗑️ Prédiction {event_id} supprimée (status: {event_status}, pas de pari)")
+                                elif event_status == "LOCKED":
+                                    # Si on a parié et que c'est verrouillé, mettre à jour le status
+                                    update_active_prediction({
+                                        'event_id': event_id,
+                                        'status': 'locked'
+                                    })
+                            
                             # Game over we can't update anymore the values... The bet was placed!
                             if (
                                 ws.events_predictions[event_id].bet_placed is False
@@ -670,6 +683,31 @@ class WebSocketsPool:
                                 ws.events_predictions[event_id].bet.update_outcomes(
                                     event_dict["outcomes"]
                                 )
+                                
+                                # Mettre à jour les données pour le dashboard
+                                if event_status == "ACTIVE":
+                                    streamer = ws.streamers[streamer_index]
+                                    outcomes_data = []
+                                    for i, outcome in enumerate(event_dict["outcomes"]):
+                                        outcomes_data.append({
+                                            'title': outcome.get('title', f'Option {i+1}'),
+                                            'color': outcome.get('color', 'BLUE' if i == 0 else 'PINK'),
+                                            'users': outcome.get('total_users', 0),
+                                            'points': outcome.get('total_points', 0),
+                                            'odds': 0
+                                        })
+                                    
+                                    update_active_prediction({
+                                        'event_id': event_id,
+                                        'streamer': streamer.username,
+                                        'title': event_dict["title"],
+                                        'outcomes': outcomes_data,
+                                        'time_remaining': int(ws.events_predictions[event_id].closing_bet_after(current_tmsp)),
+                                        'total_time': float(event_dict["prediction_window_seconds"]),
+                                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                        'our_bet': None,
+                                        'status': 'active'
+                                    })
 
                     elif message.topic == "predictions-user-v1":
                         event_id = message.data["prediction"]["event_id"]
