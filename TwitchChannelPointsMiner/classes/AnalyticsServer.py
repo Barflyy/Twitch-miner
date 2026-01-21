@@ -6,13 +6,76 @@ from pathlib import Path
 from threading import Thread
 
 import pandas as pd
-from flask import Flask, Response, cli, render_template, request
+from flask import Flask, Response, cli, render_template, request, jsonify
 
 from TwitchChannelPointsMiner.classes.Settings import Settings
 from TwitchChannelPointsMiner.utils import download_file
 
 cli.show_server_banner = lambda *_: None
 logger = logging.getLogger(__name__)
+
+# Configuration globale modifiable via le dashboard
+DASHBOARD_SETTINGS_FILE = None
+
+def get_dashboard_settings_path():
+    global DASHBOARD_SETTINGS_FILE
+    if DASHBOARD_SETTINGS_FILE is None:
+        data_dir = os.getenv("DATA_DIR", ".")
+        DASHBOARD_SETTINGS_FILE = os.path.join(data_dir, "dashboard_settings.json")
+    return DASHBOARD_SETTINGS_FILE
+
+DEFAULT_DASHBOARD_SETTINGS = {
+    "bot_enabled": True,
+    "betting_enabled": True,
+    "stealth_mode": True,
+    "bet_percentage": 5,
+    "max_points": 30000,
+    "min_balance": 5000,
+    "min_voters": 30,
+    "delay_seconds": 10,
+    "sound_notifications": True,
+    "auto_claim_bonus": True,
+    "follow_raid": True,
+    "claim_drops": True,
+    "watch_streak": True
+}
+
+def load_dashboard_settings():
+    """Charge les paramètres du dashboard depuis le fichier JSON"""
+    path = get_dashboard_settings_path()
+    try:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                saved = json.load(f)
+                # Fusionner avec les defaults pour les nouvelles clés
+                return {**DEFAULT_DASHBOARD_SETTINGS, **saved}
+    except Exception as e:
+        logger.error(f"Error loading dashboard settings: {e}")
+    return DEFAULT_DASHBOARD_SETTINGS.copy()
+
+def save_dashboard_settings(settings):
+    """Sauvegarde les paramètres du dashboard"""
+    path = get_dashboard_settings_path()
+    try:
+        with open(path, 'w') as f:
+            json.dump(settings, f, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving dashboard settings: {e}")
+        return False
+
+# Variable globale pour accéder aux settings depuis d'autres modules
+_current_settings = None
+
+def get_current_settings():
+    global _current_settings
+    if _current_settings is None:
+        _current_settings = load_dashboard_settings()
+    return _current_settings
+
+def update_current_settings(new_settings):
+    global _current_settings
+    _current_settings = new_settings
 
 
 def streamers_available():
@@ -308,6 +371,102 @@ class AnalyticsServer(Thread):
             except Exception as e:
                 logger.error(f"Error reading bot_data.json: {e}")
                 return Response(json.dumps({"streamers": {}}), status=200, mimetype="application/json")
+        
+        # ===== API de contrôle du Dashboard =====
+        
+        @self.app.route("/api/settings", methods=["GET"])
+        def api_get_settings():
+            """Récupère tous les paramètres"""
+            settings = load_dashboard_settings()
+            return jsonify(settings)
+        
+        @self.app.route("/api/settings", methods=["POST"])
+        def api_update_settings():
+            """Met à jour les paramètres"""
+            try:
+                new_settings = request.get_json()
+                current = load_dashboard_settings()
+                current.update(new_settings)
+                if save_dashboard_settings(current):
+                    update_current_settings(current)
+                    logger.info(f"Dashboard settings updated: {new_settings}")
+                    return jsonify({"success": True, "settings": current})
+                else:
+                    return jsonify({"success": False, "error": "Failed to save"}), 500
+            except Exception as e:
+                logger.error(f"Error updating settings: {e}")
+                return jsonify({"success": False, "error": str(e)}), 500
+        
+        @self.app.route("/api/settings/reset", methods=["POST"])
+        def api_reset_settings():
+            """Réinitialise tous les paramètres"""
+            if save_dashboard_settings(DEFAULT_DASHBOARD_SETTINGS):
+                update_current_settings(DEFAULT_DASHBOARD_SETTINGS.copy())
+                return jsonify({"success": True, "settings": DEFAULT_DASHBOARD_SETTINGS})
+            return jsonify({"success": False}), 500
+        
+        @self.app.route("/api/stats/reset", methods=["POST"])
+        def api_reset_stats():
+            """Réinitialise les statistiques (compteurs à zéro)"""
+            try:
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    for name, s in data.get("streamers", {}).items():
+                        balance = s.get("balance", 0)
+                        s["starting_balance"] = balance
+                        s["session_points"] = 0
+                        s["watch_points"] = 0
+                        s["bonus_points"] = 0
+                        s["bets_placed"] = 0
+                        s["bets_won"] = 0
+                        s["bets_lost"] = 0
+                        s["bet_profits"] = 0
+                        s["bet_losses"] = 0
+                        s["total_earned"] = 0
+                    
+                    with open(bot_data_path, 'w') as f:
+                        json.dump(data, f, indent=2)
+                    
+                    logger.info("Stats reset from dashboard")
+                    return jsonify({"success": True, "message": "Stats reset successfully"})
+                
+                return jsonify({"success": True, "message": "No data to reset"})
+            except Exception as e:
+                logger.error(f"Error resetting stats: {e}")
+                return jsonify({"success": False, "error": str(e)}), 500
+        
+        @self.app.route("/api/streamer/<streamer_name>/toggle", methods=["POST"])
+        def api_toggle_streamer(streamer_name):
+            """Active/désactive un streamer spécifique"""
+            try:
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    if streamer_name in data.get("streamers", {}):
+                        current = data["streamers"][streamer_name].get("enabled", True)
+                        data["streamers"][streamer_name]["enabled"] = not current
+                        
+                        with open(bot_data_path, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        
+                        return jsonify({
+                            "success": True, 
+                            "streamer": streamer_name,
+                            "enabled": not current
+                        })
+                
+                return jsonify({"success": False, "error": "Streamer not found"}), 404
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 500
 
     def run(self):
         logger.info(

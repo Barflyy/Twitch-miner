@@ -180,6 +180,12 @@
             text-transform: uppercase;
         }
 
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
         .status-pill {
             display: flex;
             align-items: center;
@@ -200,6 +206,18 @@
             animation: blink 2s ease-in-out infinite;
         }
 
+        .status-dot.paused {
+            background: var(--accent-gold);
+            box-shadow: 0 0 12px rgba(255, 214, 10, 0.3);
+            animation: none;
+        }
+
+        .status-dot.disabled {
+            background: var(--error);
+            box-shadow: 0 0 12px var(--error-glow);
+            animation: none;
+        }
+
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
@@ -209,6 +227,344 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             color: var(--text-secondary);
+        }
+
+        /* Control Panel Button */
+        .control-btn {
+            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-tertiary));
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 100px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(191, 90, 242, 0.3);
+        }
+
+        /* Control Panel Overlay */
+        .panel-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .panel-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .control-panel {
+            position: fixed;
+            top: 0;
+            right: -480px;
+            width: 480px;
+            height: 100vh;
+            background: var(--bg-primary);
+            border-left: 1px solid var(--glass-border);
+            z-index: 1001;
+            overflow-y: auto;
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .control-panel.active {
+            right: 0;
+        }
+
+        .panel-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            background: var(--bg-primary);
+            z-index: 10;
+        }
+
+        .panel-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .close-panel {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .close-panel:hover {
+            background: var(--error);
+            color: white;
+            border-color: var(--error);
+        }
+
+        .panel-content {
+            padding: 24px;
+        }
+
+        .panel-section {
+            margin-bottom: 32px;
+        }
+
+        .panel-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Toggle Switch */
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .setting-row:hover {
+            border-color: var(--accent-primary);
+        }
+
+        .setting-info {
+            flex: 1;
+        }
+
+        .setting-label {
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .setting-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .toggle {
+            position: relative;
+            width: 52px;
+            height: 28px;
+            flex-shrink: 0;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--glass-border);
+            border-radius: 100px;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+        }
+
+        .toggle input:checked + .toggle-slider::before {
+            transform: translateX(24px);
+        }
+
+        /* Slider Input */
+        .slider-row {
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            margin-bottom: 12px;
+        }
+
+        .slider-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .slider-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--accent-primary);
+            background: rgba(0, 240, 255, 0.1);
+            padding: 4px 12px;
+            border-radius: 8px;
+        }
+
+        .slider-input {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--glass-border);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .slider-input::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 15px var(--glow-cyan);
+        }
+
+        .slider-input::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        /* Action Buttons */
+        .action-btn {
+            width: 100%;
+            padding: 16px;
+            border-radius: 16px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            margin-bottom: 12px;
+            border: none;
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+        }
+
+        .action-btn.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px var(--glow-cyan);
+        }
+
+        .action-btn.danger {
+            background: var(--glass);
+            border: 1px solid var(--error);
+            color: var(--error);
+        }
+
+        .action-btn.danger:hover {
+            background: var(--error);
+            color: white;
+        }
+
+        .action-btn.secondary {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+        }
+
+        .action-btn.secondary:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(20px);
+            padding: 16px 24px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideInToast 0.4s ease-out;
+            min-width: 300px;
+        }
+
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--error); }
+        .toast.info { border-color: var(--accent-primary); }
+
+        .toast-icon {
+            font-size: 20px;
+        }
+
+        .toast-message {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        @keyframes slideInToast {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
         }
 
         /* Stats Hero Section */
@@ -471,6 +827,10 @@
             border-left: 3px solid var(--success);
         }
 
+        .streamer-card.disabled {
+            opacity: 0.5;
+        }
+
         .avatar {
             width: 56px;
             height: 56px;
@@ -554,6 +914,33 @@
 
         .points-session.positive { color: var(--success); }
         .points-session.negative { color: var(--error); }
+
+        /* Streamer Toggle */
+        .streamer-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 5;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            opacity: 0;
+        }
+
+        .streamer-card:hover .streamer-toggle {
+            opacity: 1;
+        }
+
+        .streamer-toggle:hover {
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border-color: var(--accent-primary);
+        }
 
         /* Betting Section */
         .betting-section {
@@ -689,6 +1076,7 @@
         @media (max-width: 768px) {
             .app { padding: 20px; }
             .header { flex-direction: column; gap: 20px; }
+            .header-actions { width: 100%; justify-content: center; flex-wrap: wrap; }
             .stats-hero { grid-template-columns: 1fr; }
             .stats-hero .hero-card.main { grid-column: span 1; }
             .hero-card .value { font-size: 36px; }
@@ -698,6 +1086,7 @@
             .search-box { width: 100%; }
             .streamers-grid { grid-template-columns: 1fr; }
             .betting-grid { grid-template-columns: repeat(2, 1fr); }
+            .control-panel { width: 100%; right: -100%; }
         }
 
         /* Empty State */
@@ -712,6 +1101,45 @@
             margin-bottom: 16px;
             opacity: 0.5;
         }
+
+        /* Quick Stats Bar */
+        .quick-stats {
+            display: flex;
+            gap: 24px;
+            padding: 12px 20px;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            margin-bottom: 24px;
+            animation: slideUp 0.6s ease-out 0.05s both;
+        }
+
+        .quick-stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .quick-stat .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .quick-stat .dot.green { background: var(--success); }
+        .quick-stat .dot.yellow { background: var(--accent-gold); }
+        .quick-stat .dot.red { background: var(--error); }
+
+        .quick-stat .label {
+            color: var(--text-muted);
+        }
+
+        .quick-stat .value {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
     </style>
 </head>
 
@@ -723,6 +1151,196 @@
         <div class="bg-glow-3"></div>
     </div>
 
+    <!-- Control Panel Overlay -->
+    <div class="panel-overlay" onclick="togglePanel()"></div>
+
+    <!-- Control Panel -->
+    <div class="control-panel" id="control-panel">
+        <div class="panel-header">
+            <h2>⚙️ Paramètres</h2>
+            <button class="close-panel" onclick="togglePanel()">✕</button>
+        </div>
+        <div class="panel-content">
+            <!-- Bot Control -->
+            <div class="panel-section">
+                <div class="panel-section-title">🤖 Contrôle du Bot</div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Bot Activé</div>
+                        <div class="setting-desc">Activer/désactiver toute l'activité du bot</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-bot-enabled" onchange="updateSetting('bot_enabled', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Paris Activés</div>
+                        <div class="setting-desc">Permettre au bot de placer des paris</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-betting-enabled" onchange="updateSetting('betting_enabled', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Mode Stealth</div>
+                        <div class="setting-desc">Délai aléatoire pour éviter la détection</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-stealth-mode" onchange="updateSetting('stealth_mode', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Betting Settings -->
+            <div class="panel-section">
+                <div class="panel-section-title">🎲 Paramètres de Paris</div>
+                
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <div class="setting-label">Pourcentage de mise</div>
+                        <div class="slider-value" id="bet-percentage-value">5%</div>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-bet-percentage" 
+                           min="1" max="25" value="5" 
+                           oninput="updateSlider('bet_percentage', this.value, '%')">
+                </div>
+                
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <div class="setting-label">Mise Maximum</div>
+                        <div class="slider-value" id="max-points-value">30K</div>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-max-points" 
+                           min="1000" max="100000" step="1000" value="30000" 
+                           oninput="updateSlider('max_points', this.value, 'K', 1000)">
+                </div>
+                
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <div class="setting-label">Solde Minimum pour Parier</div>
+                        <div class="slider-value" id="min-balance-value">5K</div>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-min-balance" 
+                           min="0" max="50000" step="1000" value="5000" 
+                           oninput="updateSlider('min_balance', this.value, 'K', 1000)">
+                </div>
+                
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <div class="setting-label">Votants Minimum</div>
+                        <div class="slider-value" id="min-voters-value">30</div>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-min-voters" 
+                           min="5" max="100" value="30" 
+                           oninput="updateSlider('min_voters', this.value)">
+                </div>
+                
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <div class="setting-label">Délai avant Fin (sec)</div>
+                        <div class="slider-value" id="delay-seconds-value">10s</div>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-delay-seconds" 
+                           min="5" max="60" value="10" 
+                           oninput="updateSlider('delay_seconds', this.value, 's')">
+                </div>
+            </div>
+
+            <!-- Collect Settings -->
+            <div class="panel-section">
+                <div class="panel-section-title">🎁 Collecte</div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Bonus Auto</div>
+                        <div class="setting-desc">Réclamer automatiquement les bonus</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-auto-claim-bonus" onchange="updateSetting('auto_claim_bonus', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Suivre les Raids</div>
+                        <div class="setting-desc">Suivre automatiquement les raids</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-follow-raid" onchange="updateSetting('follow_raid', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Réclamer les Drops</div>
+                        <div class="setting-desc">Collecter les drops Twitch</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-claim-drops" onchange="updateSetting('claim_drops', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Watch Streak</div>
+                        <div class="setting-desc">Maintenir les séries de visionnage</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-watch-streak" onchange="updateSetting('watch_streak', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Notifications -->
+            <div class="panel-section">
+                <div class="panel-section-title">🔔 Notifications</div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-label">Sons</div>
+                        <div class="setting-desc">Jouer un son lors des événements</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="setting-sound-notifications" onchange="updateSetting('sound_notifications', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="panel-section">
+                <div class="panel-section-title">⚡ Actions</div>
+                
+                <button class="action-btn primary" onclick="saveAllSettings()">
+                    💾 Sauvegarder les Paramètres
+                </button>
+                
+                <button class="action-btn secondary" onclick="resetSettings()">
+                    🔄 Réinitialiser les Paramètres
+                </button>
+                
+                <button class="action-btn danger" onclick="resetStats()">
+                    🗑️ Remettre les Stats à Zéro
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
     <div class="app">
         <header class="header">
             <div class="logo">
@@ -732,11 +1350,43 @@
                     <span>Channel Points Dashboard</span>
                 </div>
             </div>
-            <div class="status-pill">
-                <div class="status-dot"></div>
-                <span class="status-text" id="last-update">Connexion...</span>
+            <div class="header-actions">
+                <div class="status-pill">
+                    <div class="status-dot" id="status-dot"></div>
+                    <span class="status-text" id="last-update">Connexion...</span>
+                </div>
+                <button class="control-btn" onclick="togglePanel()">
+                    ⚙️ Paramètres
+                </button>
             </div>
         </header>
+
+        <!-- Quick Stats Bar -->
+        <div class="quick-stats" id="quick-stats">
+            <div class="quick-stat">
+                <span class="dot green" id="bot-status-dot"></span>
+                <span class="label">Bot:</span>
+                <span class="value" id="bot-status-text">Actif</span>
+            </div>
+            <div class="quick-stat">
+                <span class="dot" id="betting-status-dot"></span>
+                <span class="label">Paris:</span>
+                <span class="value" id="betting-status-text">Actifs</span>
+            </div>
+            <div class="quick-stat">
+                <span class="dot" id="stealth-status-dot"></span>
+                <span class="label">Stealth:</span>
+                <span class="value" id="stealth-status-text">On</span>
+            </div>
+            <div class="quick-stat">
+                <span class="label">Mise:</span>
+                <span class="value" id="quick-bet-percent">5%</span>
+            </div>
+            <div class="quick-stat">
+                <span class="label">Max:</span>
+                <span class="value" id="quick-max-points">30K</span>
+            </div>
+        </div>
 
         <!-- Hero Stats -->
         <div class="stats-hero">
@@ -844,10 +1494,22 @@
         </footer>
     </div>
 
+    <!-- Audio elements for notifications -->
+    <audio id="sound-win" preload="auto">
+        <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ck4l9dXV9iJScoJqRhXdtZWdtd4OOlpqYkol9c21rbXV+iZGVlY+Gg3x2dHV4fYOJjo+Ni4eDf3x6e3t+goaIiomHhYKAf359foCCg4WFhoaFhIOCgoGAgYGBgYKCgoODgoKBgYGAgIGBgYGBgYGBgYGBgYGBgA==" type="audio/wav">
+    </audio>
+    <audio id="sound-lose" preload="auto">
+        <source src="data:audio/wav;base64,UklGRl4GAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YToGAACAgICAgICAgICAgICAgICAgH+Af4B/gH+Af4B/gH9/f39/f39/f39/f39/f39/f39/gICAgICAgICAgICAgICAgICAgICAgA==" type="audio/wav">
+    </audio>
+
     <script>
         let streamersData = [];
         let currentFilter = 'all';
+        let settings = {};
+        let previousBetsWon = 0;
+        let previousBetsLost = 0;
 
+        // Format helpers
         function formatNumber(num) {
             if (num === undefined || num === null) return '—';
             if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -863,6 +1525,209 @@
             return formatted;
         }
 
+        // Toast notifications
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type]}</span>
+                <span class="toast-message">${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Sound notifications
+        function playSound(type) {
+            if (!settings.sound_notifications) return;
+            const audio = document.getElementById(`sound-${type}`);
+            if (audio) {
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
+            }
+        }
+
+        // Panel toggle
+        function togglePanel() {
+            const panel = document.getElementById('control-panel');
+            const overlay = document.querySelector('.panel-overlay');
+            panel.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        // Load settings from API
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    settings = await res.json();
+                    applySettingsToUI();
+                    updateQuickStats();
+                }
+            } catch (e) {
+                console.error('Error loading settings:', e);
+            }
+        }
+
+        // Apply settings to UI controls
+        function applySettingsToUI() {
+            document.getElementById('setting-bot-enabled').checked = settings.bot_enabled ?? true;
+            document.getElementById('setting-betting-enabled').checked = settings.betting_enabled ?? true;
+            document.getElementById('setting-stealth-mode').checked = settings.stealth_mode ?? true;
+            document.getElementById('setting-auto-claim-bonus').checked = settings.auto_claim_bonus ?? true;
+            document.getElementById('setting-follow-raid').checked = settings.follow_raid ?? true;
+            document.getElementById('setting-claim-drops').checked = settings.claim_drops ?? true;
+            document.getElementById('setting-watch-streak').checked = settings.watch_streak ?? true;
+            document.getElementById('setting-sound-notifications').checked = settings.sound_notifications ?? true;
+            
+            // Sliders
+            const betPct = settings.bet_percentage ?? 5;
+            document.getElementById('setting-bet-percentage').value = betPct;
+            document.getElementById('bet-percentage-value').textContent = betPct + '%';
+            
+            const maxPts = settings.max_points ?? 30000;
+            document.getElementById('setting-max-points').value = maxPts;
+            document.getElementById('max-points-value').textContent = formatNumber(maxPts);
+            
+            const minBal = settings.min_balance ?? 5000;
+            document.getElementById('setting-min-balance').value = minBal;
+            document.getElementById('min-balance-value').textContent = formatNumber(minBal);
+            
+            const minVoters = settings.min_voters ?? 30;
+            document.getElementById('setting-min-voters').value = minVoters;
+            document.getElementById('min-voters-value').textContent = minVoters;
+            
+            const delay = settings.delay_seconds ?? 10;
+            document.getElementById('setting-delay-seconds').value = delay;
+            document.getElementById('delay-seconds-value').textContent = delay + 's';
+        }
+
+        // Update quick stats bar
+        function updateQuickStats() {
+            // Bot status
+            const botDot = document.getElementById('bot-status-dot');
+            const botText = document.getElementById('bot-status-text');
+            botDot.className = 'dot ' + (settings.bot_enabled ? 'green' : 'red');
+            botText.textContent = settings.bot_enabled ? 'Actif' : 'Arrêté';
+            
+            // Main status dot
+            const statusDot = document.getElementById('status-dot');
+            if (!settings.bot_enabled) {
+                statusDot.className = 'status-dot disabled';
+            } else if (!settings.betting_enabled) {
+                statusDot.className = 'status-dot paused';
+            } else {
+                statusDot.className = 'status-dot';
+            }
+            
+            // Betting status
+            const betDot = document.getElementById('betting-status-dot');
+            const betText = document.getElementById('betting-status-text');
+            betDot.className = 'dot ' + (settings.betting_enabled ? 'green' : 'yellow');
+            betText.textContent = settings.betting_enabled ? 'Actifs' : 'Désactivés';
+            
+            // Stealth status
+            const stealthDot = document.getElementById('stealth-status-dot');
+            const stealthText = document.getElementById('stealth-status-text');
+            stealthDot.className = 'dot ' + (settings.stealth_mode ? 'green' : 'yellow');
+            stealthText.textContent = settings.stealth_mode ? 'On' : 'Off';
+            
+            // Values
+            document.getElementById('quick-bet-percent').textContent = (settings.bet_percentage ?? 5) + '%';
+            document.getElementById('quick-max-points').textContent = formatNumber(settings.max_points ?? 30000);
+        }
+
+        // Update setting
+        async function updateSetting(key, value) {
+            settings[key] = value;
+            updateQuickStats();
+        }
+
+        // Update slider
+        function updateSlider(key, value, suffix = '', divisor = 1) {
+            settings[key] = parseInt(value);
+            const displayValue = divisor > 1 ? formatNumber(value) : value + (suffix || '');
+            document.getElementById(key.replace('_', '-') + '-value').textContent = displayValue;
+            updateQuickStats();
+        }
+
+        // Save all settings
+        async function saveAllSettings() {
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                
+                if (res.ok) {
+                    showToast('Paramètres sauvegardés !', 'success');
+                } else {
+                    showToast('Erreur lors de la sauvegarde', 'error');
+                }
+            } catch (e) {
+                showToast('Erreur de connexion', 'error');
+            }
+        }
+
+        // Reset settings
+        async function resetSettings() {
+            if (!confirm('Réinitialiser tous les paramètres ?')) return;
+            
+            try {
+                const res = await fetch('/api/settings/reset', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    settings = data.settings;
+                    applySettingsToUI();
+                    updateQuickStats();
+                    showToast('Paramètres réinitialisés', 'success');
+                }
+            } catch (e) {
+                showToast('Erreur', 'error');
+            }
+        }
+
+        // Reset stats
+        async function resetStats() {
+            if (!confirm('Remettre toutes les statistiques à zéro ?')) return;
+            
+            try {
+                const res = await fetch('/api/stats/reset', { method: 'POST' });
+                if (res.ok) {
+                    showToast('Statistiques réinitialisées !', 'success');
+                    loadData();
+                }
+            } catch (e) {
+                showToast('Erreur', 'error');
+            }
+        }
+
+        // Toggle streamer
+        async function toggleStreamer(name, e) {
+            e.stopPropagation();
+            try {
+                const res = await fetch(`/api/streamer/${name}/toggle`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`${name} ${data.enabled ? 'activé' : 'désactivé'}`, 'info');
+                    loadData();
+                }
+            } catch (e) {
+                showToast('Erreur', 'error');
+            }
+        }
+
+        // Load data
         async function loadData() {
             try {
                 const res = await fetch('/bot_data.json?t=' + Date.now());
@@ -876,6 +1741,7 @@
                     points: d.balance || 0,
                     startingBalance: d.starting_balance || d.balance || 0,
                     online: d.online || false,
+                    enabled: d.enabled !== false,
                     sessionPoints: d.session_points || 0,
                     betsPlaced: d.bets_placed || 0,
                     betsWon: d.bets_won || 0,
@@ -884,12 +1750,26 @@
                     betLosses: d.bet_losses || 0,
                 }));
 
+                // Check for new wins/losses
+                const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
+                const totalLost = streamersData.reduce((sum, s) => sum + s.betsLost, 0);
+                
+                if (totalWon > previousBetsWon) {
+                    playSound('win');
+                    showToast('Pari gagné ! 🎉', 'success');
+                }
+                if (totalLost > previousBetsLost) {
+                    playSound('lose');
+                }
+                
+                previousBetsWon = totalWon;
+                previousBetsLost = totalLost;
+
                 updateUI();
                 updateTimestamp();
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('last-update').textContent = 'Erreur connexion';
-                document.getElementById('last-update').style.color = 'var(--error)';
             }
         }
 
@@ -950,9 +1830,13 @@
             grid.innerHTML = filtered.map(s => {
                 const sessionClass = s.sessionPoints > 0 ? 'positive' : s.sessionPoints < 0 ? 'negative' : '';
                 const sessionText = s.sessionPoints !== 0 ? formatGain(s.sessionPoints) : '';
+                const disabledClass = s.enabled ? '' : 'disabled';
                 
                 return `
-                    <div class="streamer-card ${s.online ? 'online' : ''}" onclick="window.open('https://twitch.tv/${s.name}', '_blank')">
+                    <div class="streamer-card ${s.online ? 'online' : ''} ${disabledClass}" onclick="window.open('https://twitch.tv/${s.name}', '_blank')">
+                        <button class="streamer-toggle" onclick="toggleStreamer('${s.name}', event)">
+                            ${s.enabled ? '⏸️ Pause' : '▶️ Activer'}
+                        </button>
                         <div class="avatar ${s.online ? 'online' : ''}">${s.name.substring(0, 2)}</div>
                         <div class="streamer-info">
                             <div class="streamer-name">
@@ -1001,6 +1885,7 @@
         }
 
         // Initialize
+        loadSettings();
         loadData();
         setInterval(loadData, 30000);
     </script>
