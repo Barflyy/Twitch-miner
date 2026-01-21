@@ -1,10 +1,10 @@
 import json
 import logging
+import os
 import random
 import time
-# import os
-from threading import Thread, Timer
-# from pathlib import Path
+from pathlib import Path
+from threading import Thread, Timer, Lock
 
 from dateutil import parser
 
@@ -21,6 +21,94 @@ from TwitchChannelPointsMiner.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Lock pour éviter les problèmes de concurrence sur bot_data.json
+_bot_data_lock = Lock()
+
+
+def update_bot_data(streamer_name: str, updates: dict):
+    """
+    Met à jour bot_data.json de manière thread-safe.
+    
+    Args:
+        streamer_name: Nom du streamer (lowercase)
+        updates: Dict avec les champs à mettre à jour:
+            - balance: Solde actuel
+            - online: État en ligne
+            - session_points: Points gagnés cette session (incrementer)
+            - watch_points: Points de watch (incrementer)
+            - bonus_points: Points de bonus (incrementer)
+            - bets_placed: Paris placés (incrementer)
+            - bets_won: Paris gagnés (incrementer)
+            - bets_lost: Paris perdus (incrementer)
+            - bet_profits: Profits des paris (incrementer)
+            - bet_losses: Pertes des paris (incrementer)
+    """
+    try:
+        with _bot_data_lock:
+            data_dir = os.getenv("DATA_DIR", ".")
+            bot_data_path = os.path.join(data_dir, "bot_data.json")
+            
+            # Charger les données existantes
+            if os.path.exists(bot_data_path):
+                with open(bot_data_path, 'r') as f:
+                    data = json.load(f)
+            else:
+                data = {'streamers': {}, 'session_start': time.time()}
+            
+            # S'assurer que streamers existe
+            if 'streamers' not in data:
+                data['streamers'] = {}
+            
+            streamer_key = streamer_name.lower()
+            
+            # Créer l'entrée si elle n'existe pas
+            if streamer_key not in data['streamers']:
+                data['streamers'][streamer_key] = {
+                    'balance': 0,
+                    'starting_balance': 0,
+                    'online': False,
+                    'session_points': 0,
+                    'watch_points': 0,
+                    'bonus_points': 0,
+                    'bets_placed': 0,
+                    'bets_won': 0,
+                    'bets_lost': 0,
+                    'bet_profits': 0,
+                    'bet_losses': 0,
+                    'total_earned': 0,
+                    'last_update': None
+                }
+            
+            streamer_data = data['streamers'][streamer_key]
+            
+            # Mettre à jour les champs
+            for key, value in updates.items():
+                if key == 'balance':
+                    streamer_data['balance'] = value
+                    # Calculer session_points comme différence avec starting_balance
+                    starting = streamer_data.get('starting_balance', value)
+                    streamer_data['session_points'] = value - starting
+                elif key == 'online':
+                    streamer_data['online'] = value
+                elif key == 'starting_balance':
+                    streamer_data['starting_balance'] = value
+                elif key in ['session_points', 'watch_points', 'bonus_points', 
+                           'bets_placed', 'bets_won', 'bets_lost', 
+                           'bet_profits', 'bet_losses', 'total_earned']:
+                    # Incrémenter ces valeurs
+                    current = streamer_data.get(key, 0)
+                    streamer_data[key] = current + value
+            
+            # Timestamp de mise à jour
+            streamer_data['last_update'] = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Sauvegarder
+            with open(bot_data_path, 'w') as f:
+                json.dump(data, f, indent=2)
+                
+    except Exception as e:
+        logger.debug(f"Erreur mise à jour bot_data.json: {e}")
 
 
 class WebSocketsPool:
@@ -101,17 +189,27 @@ class WebSocketsPool:
     def on_open(ws):
         def run():
             ws.is_opened = True
+            # Délai initial randomisé pour éviter les pings simultanés
+            time.sleep(random.uniform(1, 5))
             ws.ping()
 
             for topic in ws.pending_topics:
                 ws.listen(topic, ws.twitch.twitch_login.get_auth_token())
+                # Petit délai entre chaque subscribe pour éviter le rate limiting
+                time.sleep(random.uniform(0.1, 0.3))
 
             while ws.is_closed is False:
                 # Else: the ws is currently in reconnecting phase, you can't do ping or other operation.
                 # Probably this ws will be closed very soon with ws.is_closed = True
                 if ws.is_reconnecting is False:
-                    ws.ping()  # We need ping for keep the connection alive
-                    time.sleep(random.uniform(25, 30))
+                    try:
+                        ws.ping()  # We need ping for keep the connection alive
+                    except Exception as e:
+                        logger.debug(f"#{ws.index} - Ping failed: {e}")
+                        break
+                    
+                    # Ping moins fréquent (30-60s au lieu de 25-30s) pour réduire la charge réseau
+                    time.sleep(random.uniform(30, 60))
 
                     if ws.elapsed_last_pong() > 5:
                         logger.info(
@@ -128,14 +226,30 @@ class WebSocketsPool:
         # Connection lost | [WinError 10054] An existing connection was forcibly closed by the remote host
         # Connection already closed | Connection is already closed (raise WebSocketConnectionClosedException)
         error_str = str(error)
-        if "ping pong failed" in error_str:
-            logger.warning(f"#{ws.index} - WebSocket connection unstable: {error_str} (will reconnect)")
+        
+        # Erreurs communes qui ne nécessitent pas de log d'erreur complet
+        known_transient_errors = [
+            "ping pong failed",
+            "Broken pipe",
+            "BAD_LENGTH",
+            "Connection reset",
+            "Connection refused",
+            "timed out",
+            "EOF occurred"
+        ]
+        
+        is_transient = any(err in error_str for err in known_transient_errors)
+        
+        if is_transient:
+            # Ne pas spammer les logs pour les erreurs transitoires connues
+            logger.debug(f"#{ws.index} - WebSocket transient error: {error_str}")
         else:
             logger.error(f"#{ws.index} - WebSocket error: {error}")
 
     @staticmethod
     def on_close(ws, close_status_code, close_reason):
-        logger.info(f"#{ws.index} - WebSocket closed")
+        # Log moins verbeux pour les fermetures
+        logger.debug(f"#{ws.index} - WebSocket closed (code: {close_status_code})")
         # On close please reconnect automatically
         WebSocketsPool.handle_reconnection(ws)
 
@@ -153,10 +267,16 @@ class WebSocketsPool:
             ws.is_reconnecting = True
 
             if ws.forced_close is False:
-                logger.info(
-                    f"#{ws.index} - Reconnecting to Twitch PubSub server in ~60 seconds"
+                # Délai basé sur l'index pour éviter les reconnexions simultanées
+                # ws #0 attend 30s, ws #10 attend 35s, ws #20 attend 40s, etc.
+                base_delay = 30
+                stagger_delay = (ws.index % 20) * 3  # 0-60s selon l'index
+                total_delay = base_delay + stagger_delay
+                
+                logger.debug(
+                    f"#{ws.index} - Reconnecting in ~{total_delay}s"
                 )
-                time.sleep(30)
+                time.sleep(total_delay)
 
                 while internet_connection_available() is False:
                     random_sleep = random.randint(1, 3)
@@ -206,6 +326,13 @@ class WebSocketsPool:
                         if message.type in ["points-earned", "points-spent"]:
                             balance = message.data["balance"]["balance"]
                             ws.streamers[streamer_index].channel_points = balance
+                            
+                            # Mettre à jour bot_data.json avec le nouveau solde
+                            update_bot_data(ws.streamers[streamer_index].username, {
+                                'balance': balance,
+                                'online': ws.streamers[streamer_index].is_online
+                            })
+                            
                             # Analytics switch
                             if Settings.enable_analytics is True:
                                 ws.streamers[streamer_index].persistent_series(
@@ -228,6 +355,15 @@ class WebSocketsPool:
                             ws.streamers[streamer_index].update_history(
                                 reason_code, earned
                             )
+                            
+                            # Mettre à jour bot_data.json avec les gains par type
+                            points_update = {'total_earned': earned}
+                            if reason_code in ['WATCH', 'WATCH_STREAK']:
+                                points_update['watch_points'] = earned
+                            elif reason_code in ['CLAIM', 'RAID']:
+                                points_update['bonus_points'] = earned
+                            update_bot_data(ws.streamers[streamer_index].username, points_update)
+                            
                             # Analytics switch
                             if Settings.enable_analytics is True:
                                 ws.streamers[streamer_index].persistent_annotations(
@@ -338,8 +474,33 @@ class WebSocketsPool:
                                         # Créer une fonction wrapper pour logger l'exécution
                                         def bet_timer_callback(event_arg):
                                             try:
+                                                # Vérifier que l'événement est toujours actif
+                                                if event_arg.status != "ACTIVE":
+                                                    logger.info(
+                                                        f"⏰ Timer exécuté mais événement n'est plus ACTIVE ({event_arg.status})",
+                                                        extra={
+                                                            "emoji": ":warning:",
+                                                            "event": Events.BET_FILTERS,
+                                                        },
+                                                    )
+                                                    return
+                                                
+                                                # Vérifier qu'on a assez de données (min_voters)
+                                                min_voters = getattr(event_arg.streamer.settings.bet, 'min_voters', 30)
+                                                total_users = event_arg.bet.total_users
+                                                
+                                                if total_users < min_voters:
+                                                    logger.info(
+                                                        f"⏰ Timer exécuté mais pas assez de votants ({total_users}/{min_voters})",
+                                                        extra={
+                                                            "emoji": ":warning:",
+                                                            "event": Events.BET_FILTERS,
+                                                        },
+                                                    )
+                                                    return
+                                                
                                                 logger.info(
-                                                    f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status})",
+                                                    f"⏰ Timer exécuté pour {event_arg.event_id} (statut: {event_arg.status}, {total_users} votants)",
                                                     extra={
                                                         "emoji": ":alarm_clock:",
                                                         "event": Events.BET_START,
@@ -429,14 +590,36 @@ class WebSocketsPool:
                                     "PREDICTION", points["gained"]
                                 )
                                 
+                                # === MISE À JOUR BOT_DATA.JSON POUR LES STATS DE PARIS ===
+                                result_type = event_prediction.result["type"]
+                                streamer_username = ws.streamers[streamer_index].username
+                                
+                                if result_type == "WIN":
+                                    # Profit = Gains - Mise
+                                    profit = points["gained"]  # C'est déjà won - placed
+                                    update_bot_data(streamer_username, {
+                                        'bets_won': 1,
+                                        'bet_profits': profit if profit > 0 else 0,
+                                    })
+                                    logger.info(f"✅ Pari gagné sur {streamer_username}: +{profit} points")
+                                    
+                                elif result_type == "LOSE":
+                                    # Perte = Mise placée
+                                    loss = points["placed"]
+                                    update_bot_data(streamer_username, {
+                                        'bets_lost': 1,
+                                        'bet_losses': loss,
+                                    })
+                                    logger.info(f"❌ Pari perdu sur {streamer_username}: -{loss} points")
+                                
                                 # Remove duplicate history records from previous message sent in community-points-user-v1
-                                if event_prediction.result["type"] == "REFUND":
+                                if result_type == "REFUND":
                                     ws.streamers[streamer_index].update_history(
                                         "REFUND",
                                         -points["placed"],
                                         counter=-1,
                                     )
-                                elif event_prediction.result["type"] == "WIN":
+                                elif result_type == "WIN":
                                     ws.streamers[streamer_index].update_history(
                                         "PREDICTION",
                                         -points["won"],
@@ -455,6 +638,14 @@ class WebSocketsPool:
                             elif message.type == "prediction-made":
                                 event_prediction.bet_confirmed = True
                                 event_prediction.bet_placed = True
+                                
+                                # === ENREGISTRER LE PARI PLACÉ ===
+                                streamer_username = ws.streamers[streamer_index].username
+                                bet_amount = event_prediction.bet.decision.get("amount", 0)
+                                update_bot_data(streamer_username, {
+                                    'bets_placed': 1,
+                                })
+                                logger.info(f"🎲 Pari placé sur {streamer_username}: {bet_amount} points")
                                 
                                 # Analytics switch
                                 if Settings.enable_analytics is True:

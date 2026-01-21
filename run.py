@@ -114,10 +114,17 @@ print(f"👤 User: {username}")
 # Importer le bot
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
-from TwitchChannelPointsMiner.classes.Settings import Priority, Events
+from TwitchChannelPointsMiner.classes.Settings import Priority, Events, FollowersOrder
 from TwitchChannelPointsMiner.classes.Discord import Discord
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer, StreamerSettings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings, Condition, OutcomeKeys, FilterCondition, DelayMode
+
+# === CONFIGURATION OPTIMALE POUR GAGNER LES PARIS ===
+# Stratégie CROWD_WISDOM : Analyse l'intelligence collective des parieurs
+# - Détecte les "sharp bettors" (minorité avec gros bets)
+# - Analyse le money flow (où va l'argent des gros parieurs)
+# - Suit le consensus fort (>70%) quand il existe
+from TwitchChannelPointsMiner.classes.Chat import ChatPresence
 
 print("🔧 Configuration du bot...")
 
@@ -177,16 +184,45 @@ twitch_miner = TwitchChannelPointsMiner(
         discord=discord_config,  # ✅ Configuration Discord intégrée
     ),
     streamer_settings=StreamerSettings(
-        make_predictions=True,
-        follow_raid=True,
-        claim_drops=True,
-        watch_streak=True,
+        make_predictions=True,          # Participer aux prédictions
+        follow_raid=True,               # Suivre les raids pour bonus points
+        claim_drops=True,               # Réclamer les drops automatiquement
+        claim_moments=True,             # Réclamer les Moments Twitch (bonus points)
+        watch_streak=True,              # Maintenir les streaks de visionnage
+        chat=ChatPresence.ONLINE,       # Rejoindre le chat quand en ligne (augmente watch-time)
         bet=BetSettings(
-            strategy=Strategy.SMART,
-            percentage=5,
-            percentage_gap=20,
-            max_points=50000,
-            minimum_points=20000,
+            # === STRATÉGIE CROWD_WISDOM ===
+            # Analyse l'intelligence collective pour maximiser les gains
+            # Priorité: Sharp Signals > Strong Consensus > Money Flow > Majorité
+            strategy=Strategy.CROWD_WISDOM,
+            
+            # === GESTION DU RISQUE ===
+            percentage=5,               # 5% du solde de base
+            percentage_gap=20,          # Écart minimum entre les choix
+            max_points=30000,           # Maximum par pari (réduit pour limiter les pertes)
+            minimum_points=5000,        # Parier seulement si on a au moins 5k
+            
+            # === PROTECTION ===
+            stealth_mode=True,          # Évite d'être le plus gros parieur
+            
+            # === TIMING OPTIMISÉ ===
+            # Attendre 10 secondes avant la fin pour avoir des données stables
+            delay=10,
+            delay_mode=DelayMode.FROM_END,
+            
+            # === FILTRES INTELLIGENTS ===
+            # Min 30 votants pour données fiables
+            min_voters=30,
+            # Ne pas skip les votes divisés (CROWD_WISDOM gère ça intelligemment)
+            skip_if_divided=False,
+            
+            # Filtre: Entre 30 et 500 votants (évite les petites ET grosses prédictions)
+            # Les très grosses prédictions ont des odds moins fiables
+            filter_condition=FilterCondition(
+                by=OutcomeKeys.TOTAL_USERS,
+                where=Condition.LTE,        # Less Than or Equal (≤)
+                value=500                   # Maximum 500 votants
+            ),
         )
     )
 )

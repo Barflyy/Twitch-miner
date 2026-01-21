@@ -404,10 +404,14 @@ class TwitchChannelPointsMiner:
                     with open(data_file, 'r') as f:
                         data = json.load(f)
                 else:
-                    data = {'streamers': {}}
+                    data = {'streamers': {}, 'session_start': time.time()}
+                
+                # Enregistrer l'heure de début de session
+                data['session_start'] = time.time()
                 
                 # Mettre à jour les points de tous les streamers
                 updated_count = 0
+                new_count = 0
                 for streamer in self.streamers:
                     streamer_name = streamer.username.lower()
                     
@@ -416,36 +420,48 @@ class TwitchChannelPointsMiner:
                         data['streamers'][streamer_name] = {
                             'online': streamer.is_online,
                             'balance': streamer.channel_points,
-                            'starting_balance': streamer.channel_points, # Nouveau départ
+                            'starting_balance': streamer.channel_points,
                             'total_earned': 0,
                             'session_points': 0,
                             'watch_points': 0,
                             'bonus_points': 0,
                             'bets_placed': 0,
                             'bets_won': 0,
-                            'bets_lost': 0
+                            'bets_lost': 0,
+                            'bet_profits': 0,
+                            'bet_losses': 0,
+                            'last_update': time.strftime('%Y-%m-%d %H:%M:%S')
                         }
-                        updated_count += 1
+                        new_count += 1
                     else:
-                        # Streamer existant : ON RESET LA SESSION
-                        # On garde total_earned, mais on reset tout le reste pour la nouvelle session
-                        data['streamers'][streamer_name]['balance'] = streamer.channel_points
-                        data['streamers'][streamer_name]['online'] = streamer.is_online
+                        # Streamer existant : GARDER les stats historiques (total_earned, bets_placed, etc.)
+                        # Mettre à jour uniquement le solde actuel et le point de départ de session
+                        existing = data['streamers'][streamer_name]
                         
-                        # RESET SESSION DATA
-                        data['streamers'][streamer_name]['starting_balance'] = streamer.channel_points # Reset baseline
-                        data['streamers'][streamer_name]['session_points'] = 0
-                        data['streamers'][streamer_name]['watch_points'] = 0
-                        data['streamers'][streamer_name]['bonus_points'] = 0
-                        data['streamers'][streamer_name]['bets_placed'] = 0
-                        data['streamers'][streamer_name]['bets_won'] = 0
-                        data['streamers'][streamer_name]['bets_lost'] = 0
+                        # Mise à jour du solde et de l'état
+                        existing['balance'] = streamer.channel_points
+                        existing['online'] = streamer.is_online
+                        
+                        # NOUVELLE SESSION : Reset starting_balance pour calculer session_points correctement
+                        existing['starting_balance'] = streamer.channel_points
+                        existing['session_points'] = 0  # Recalculé en temps réel (balance - starting_balance)
+                        
+                        # GARDER les stats historiques de paris (ne pas reset)
+                        # bets_placed, bets_won, bets_lost, bet_profits, bet_losses, total_earned
+                        # Ces valeurs restent intactes
+                        
+                        # Reset les stats de session (watch/bonus de cette session uniquement)
+                        existing['watch_points'] = 0
+                        existing['bonus_points'] = 0
+                        
+                        existing['last_update'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                        updated_count += 1
                 
                 # Sauvegarder
                 with open(data_file, 'w') as f:
                     json.dump(data, f, indent=2)
                 
-                logger.info(f"📊 bot_data.json réinitialisé pour la session : {len(self.streamers)} streamers")
+                logger.info(f"📊 bot_data.json mis à jour : {new_count} nouveaux, {updated_count} existants (stats paris conservées)")
             except Exception as e:
                 logger.warning(f"⚠️ Erreur mise à jour bot_data.json : {e}")
 

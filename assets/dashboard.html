@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Miner Dashboard</title>
+    <link rel="icon" type="image/png" href="https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0e0e10;
+            --bg-secondary: #18181b;
+            --bg-card: #1f1f23;
+            --bg-hover: #26262c;
+            --accent: #9146ff;
+            --accent-glow: rgba(145, 70, 255, 0.3);
+            --text-primary: #efeff1;
+            --text-secondary: #adadb8;
+            --text-muted: #636369;
+            --success: #00c853;
+            --error: #ff4757;
+            --warning: #ffa500;
+            --border: #2f2f35;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 .icon {
+            font-size: 32px;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .header .status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        .stat-card .label {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .stat-card .value.positive {
+            color: var(--success);
+        }
+
+        .stat-card .value.negative {
+            color: var(--error);
+        }
+
+        .stat-card .value.accent {
+            color: var(--accent);
+        }
+
+        .stat-card .sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Streamers Section */
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .streamers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }
+
+        .streamer-card {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .streamer-card:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent);
+        }
+
+        .streamer-card .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), #772ce8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .streamer-card .info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .streamer-card .name {
+            font-weight: 600;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .streamer-card .name .online-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            flex-shrink: 0;
+        }
+
+        .streamer-card .name .offline-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .streamer-card .stats {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .streamer-card .points {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent);
+            text-align: right;
+        }
+
+        .streamer-card .session {
+            font-size: 12px;
+            color: var(--success);
+            text-align: right;
+            margin-top: 2px;
+        }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover,
+        .filter-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .search-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .search-box::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        /* Betting Stats */
+        .betting-section {
+            margin-top: 32px;
+        }
+
+        .betting-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .bet-stat {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .bet-stat .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .bet-stat .value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .bet-stat .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 16px;
+                text-align: center;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .streamers-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #00c853);
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+
+        /* Refresh timer */
+        .refresh-timer {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>
+                <span class="icon">🎮</span>
+                Twitch Miner
+            </h1>
+            <div class="status">
+                <span class="dot"></span>
+                <span id="last-update">Chargement...</span>
+                <span class="refresh-timer" id="refresh-timer"></span>
+            </div>
+        </header>
+
+        <!-- Stats Overview -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="label">💎 Total Points</div>
+                <div class="value accent" id="total-points">-</div>
+                <div class="sub" id="total-sub">Sur tous les streamers</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">📈 Gains Session</div>
+                <div class="value positive" id="session-gains">-</div>
+                <div class="sub" id="session-sub">Balance - Début session</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🟢 En Ligne</div>
+                <div class="value" id="online-count">-</div>
+                <div class="sub" id="online-sub">streamers actifs</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🎯 Win Rate</div>
+                <div class="value" id="win-rate">-</div>
+                <div class="sub" id="win-rate-sub">sur les paris</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">💰 Profit Paris</div>
+                <div class="value" id="bet-profit">-</div>
+                <div class="sub" id="bet-profit-sub">profits - pertes (historique)</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <button class="filter-btn active" onclick="setFilter('all')">Tous</button>
+            <button class="filter-btn" onclick="setFilter('online')">🟢 En ligne</button>
+            <button class="filter-btn" onclick="setFilter('offline')">⚫ Hors ligne</button>
+            <input type="text" class="search-box" placeholder="🔍 Rechercher un streamer..." id="search-input"
+                oninput="filterStreamers()">
+        </div>
+
+        <!-- Streamers List -->
+        <div class="section-title">📺 Streamers</div>
+        <div class="streamers-grid" id="streamers-grid">
+            <div class="loading">
+                <div class="spinner"></div>
+                Chargement des données...
+            </div>
+        </div>
+
+        <!-- Betting Stats -->
+        <div class="betting-section">
+            <div class="section-title">🎲 Statistiques de Paris</div>
+            <div class="betting-grid" id="betting-grid">
+                <div class="bet-stat">
+                    <div class="icon">🎯</div>
+                    <div class="value" id="bets-total">-</div>
+                    <div class="label">Paris placés</div>
+                </div>
+                <div class="bet-stat">
+                    <div class="icon">✅</div>
+                    <div class="value positive" id="bets-won">-</div>
+                    <div class="label">Gagnés</div>
+                </div>
+                <div class="bet-stat">
+                    <div class="icon">❌</div>
+                    <div class="value negative" id="bets-lost">-</div>
+                    <div class="label">Perdus</div>
+                </div>
+                <div class="bet-stat">
+                    <div class="icon">💵</div>
+                    <div class="value positive" id="total-profits">-</div>
+                    <div class="label">Profits total</div>
+                </div>
+                <div class="bet-stat">
+                    <div class="icon">📉</div>
+                    <div class="value negative" id="total-losses">-</div>
+                    <div class="label">Pertes total</div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            Twitch Channel Points Miner •
+            <a href="https://github.com/rdavydov/Twitch-Channel-Points-Miner-v2" target="_blank">GitHub</a>
+            • Rafraîchissement auto toutes les 30s
+        </footer>
+    </div>
+
+    <script>
+        let streamersData = [];
+        let currentFilter = 'all';
+        let refreshInterval;
+
+        // Format numbers
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        // Format numbers with + sign
+        function formatGain(num) {
+            if (num >= 0) return '+' + formatNumber(num);
+            return formatNumber(num);
+        }
+
+        // Load data from API
+        async function loadData() {
+            try {
+                // OPTIMISATION: On ne charge QUE bot_data.json pour éviter de scanner 500 fichiers
+                // sur le serveur via /streamers (ce qui causait le chargement infini)
+                const botRes = await fetch('/bot_data.json?t=' + Date.now()); // Anti-cache
+                if (!botRes.ok) throw new Error('Network response was not ok');
+
+                const botData = await botRes.json();
+                const streamersMap = botData.streamers || {};
+
+                // Convertir l'objet streamers en tableau
+                streamersData = Object.entries(streamersMap).map(([name, data]) => ({
+                    name: name,
+                    points: data.balance || 0,
+                    startingBalance: data.starting_balance || data.balance || 0,
+                    lastActivity: data.last_update ? new Date(data.last_update).getTime() : 0,
+                    online: data.online || false,
+                    sessionPoints: data.session_points || 0,
+                    totalEarned: data.total_earned || 0,
+                    watchPoints: data.watch_points || 0,
+                    bonusPoints: data.bonus_points || 0,
+                    betsPlaced: data.bets_placed || 0,
+                    betsWon: data.bets_won || 0,
+                    betsLost: data.bets_lost || 0,
+                    betProfits: data.bet_profits || 0,
+                    betLosses: data.bet_losses || 0,
+                }));
+
+                updateUI();
+                updateLastUpdate();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('last-update').textContent = "Erreur connexion...";
+                document.getElementById('last-update').style.color = "var(--error)";
+            }
+        }
+
+        // Update UI
+        function updateUI() {
+            updateStats();
+            updateStreamersGrid();
+            updateBettingStats();
+        }
+
+        // Update stats cards
+        function updateStats() {
+            const totalPoints = streamersData.reduce((sum, s) => sum + s.points, 0);
+            
+            // Session gains = somme des session_points (balance - starting_balance)
+            // Ou si session_points n'est pas dispo, on le calcule
+            const sessionGains = streamersData.reduce((sum, s) => {
+                // Priorité: session_points calculé en temps réel
+                if (s.sessionPoints !== undefined && s.sessionPoints !== 0) {
+                    return sum + s.sessionPoints;
+                }
+                // Fallback: balance - starting_balance
+                if (s.startingBalance !== undefined) {
+                    return sum + (s.points - s.startingBalance);
+                }
+                return sum;
+            }, 0);
+            
+            const onlineCount = streamersData.filter(s => s.online).length;
+            const totalBets = streamersData.reduce((sum, s) => sum + s.betsPlaced, 0);
+            const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
+            const totalLost = streamersData.reduce((sum, s) => sum + s.betsLost, 0);
+            const winRate = totalBets > 0 ? ((totalWon / totalBets) * 100).toFixed(1) : 0;
+            
+            // Profit des paris = profits totaux - pertes totales
+            const betProfits = streamersData.reduce((sum, s) => sum + (s.betProfits || 0), 0);
+            const betLosses = streamersData.reduce((sum, s) => sum + (s.betLosses || 0), 0);
+            const betProfit = betProfits - betLosses;
+
+            document.getElementById('total-points').textContent = formatNumber(totalPoints);
+            document.getElementById('total-sub').textContent = `Sur ${streamersData.length} streamers`;
+
+            document.getElementById('session-gains').textContent = formatGain(sessionGains);
+            document.getElementById('session-gains').className = `value ${sessionGains >= 0 ? 'positive' : 'negative'}`;
+
+            document.getElementById('online-count').textContent = onlineCount;
+            document.getElementById('online-sub').textContent = `sur ${streamersData.length} streamers`;
+
+            document.getElementById('win-rate').textContent = winRate + '%';
+            document.getElementById('win-rate-sub').textContent = `${totalWon}/${totalBets} paris`;
+
+            document.getElementById('bet-profit').textContent = formatGain(betProfit);
+            document.getElementById('bet-profit').className = `value ${betProfit >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('bet-profit-sub').textContent = `+${formatNumber(betProfits)} / -${formatNumber(betLosses)}`;
+        }
+
+        // Update streamers grid
+        function updateStreamersGrid() {
+            const grid = document.getElementById('streamers-grid');
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+
+            let filtered = streamersData;
+
+            // Apply filter
+            if (currentFilter === 'online') {
+                filtered = filtered.filter(s => s.online);
+            } else if (currentFilter === 'offline') {
+                filtered = filtered.filter(s => !s.online);
+            }
+
+            // Apply search
+            if (searchTerm) {
+                filtered = filtered.filter(s => s.name.includes(searchTerm));
+            }
+
+            // Sort by points descending
+            filtered.sort((a, b) => b.points - a.points);
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div class="loading">Aucun streamer trouvé</div>';
+                return;
+            }
+
+            grid.innerHTML = filtered.map(s => `
+                <div class="streamer-card" onclick="window.open('https://twitch.tv/${s.name}', '_blank')">
+                    <div class="avatar">${s.name.substring(0, 2)}</div>
+                    <div class="info">
+                        <div class="name">
+                            <span class="${s.online ? 'online-dot' : 'offline-dot'}"></span>
+                            ${s.name}
+                        </div>
+                        <div class="stats">
+                            ${s.online ? '🔴 En direct' : 'Hors ligne'} • 
+                            ${s.betsWon}/${s.betsPlaced} paris
+                        </div>
+                    </div>
+                    <div>
+                        <div class="points">${formatNumber(s.points)}</div>
+                        ${s.sessionPoints > 0 ? `<div class="session">+${formatNumber(s.sessionPoints)}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update betting stats
+        function updateBettingStats() {
+            const totalBets = streamersData.reduce((sum, s) => sum + s.betsPlaced, 0);
+            const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
+            const totalLost = streamersData.reduce((sum, s) => sum + s.betsLost, 0);
+            const totalProfits = streamersData.reduce((sum, s) => sum + (s.betProfits || 0), 0);
+            const totalLosses = streamersData.reduce((sum, s) => sum + (s.betLosses || 0), 0);
+            const netProfit = totalProfits - totalLosses;
+
+            document.getElementById('bets-total').textContent = totalBets;
+            document.getElementById('bets-won').textContent = totalWon;
+            document.getElementById('bets-lost').textContent = totalLost;
+            document.getElementById('total-profits').textContent = '+' + formatNumber(totalProfits);
+            document.getElementById('total-losses').textContent = '-' + formatNumber(totalLosses);
+        }
+
+        // Set filter
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            updateStreamersGrid();
+        }
+
+        // Filter streamers (search)
+        function filterStreamers() {
+            updateStreamersGrid();
+        }
+
+        // Update last update time
+        function updateLastUpdate() {
+            const now = new Date();
+            document.getElementById('last-update').textContent =
+                `Mis à jour à ${now.toLocaleTimeString('fr-FR')}`;
+        }
+
+        // Initialize
+        loadData();
+
+        // Auto refresh every 30 seconds
+        refreshInterval = setInterval(loadData, 30000);
+    </script>
+</body>
+
+</html>

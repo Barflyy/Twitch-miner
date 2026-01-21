@@ -168,11 +168,8 @@ def json_all():
 
 
 def index(refresh=5, days_ago=7):
-    return render_template(
-        "charts.html",
-        refresh=(refresh * 60 * 1000),
-        daysAgo=days_ago,
-    )
+    # Nouveau dashboard moderne par défaut
+    return render_template("dashboard.html")
 
 
 def streamers():
@@ -285,6 +282,32 @@ class AnalyticsServer(Thread):
                               json_all, methods=["GET"])
         self.app.add_url_rule(
             "/log", "log", generate_log, methods=["GET"])
+        
+        # Nouvelle route pour le dashboard moderne
+        @self.app.route("/dashboard")
+        def dashboard():
+            return render_template("dashboard.html")
+        
+        # Ancienne route pour les graphiques détaillés
+        @self.app.route("/charts")
+        def charts():
+            return render_template("charts.html", refresh=self.refresh * 60 * 1000, daysAgo=self.days_ago)
+        
+        # Route pour servir bot_data.json
+        @self.app.route("/bot_data.json")
+        def bot_data():
+            import os
+            data_dir = os.getenv("DATA_DIR", ".")
+            bot_data_path = os.path.join(data_dir, "bot_data.json")
+            try:
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        return Response(f.read(), status=200, mimetype="application/json")
+                else:
+                    return Response(json.dumps({"streamers": {}}), status=200, mimetype="application/json")
+            except Exception as e:
+                logger.error(f"Error reading bot_data.json: {e}")
+                return Response(json.dumps({"streamers": {}}), status=200, mimetype="application/json")
 
     def run(self):
         logger.info(

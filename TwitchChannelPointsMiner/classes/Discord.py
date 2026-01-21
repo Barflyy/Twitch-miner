@@ -35,8 +35,12 @@ class Discord(object):
             
             # Charger les données existantes
             if data_file.exists():
-                with open(data_file, 'r') as f:
-                    data = json.load(f)
+                try:
+                    with open(data_file, 'r') as f:
+                        data = json.load(f)
+                except Exception:
+                    # Fichier corrompu, on réinitialise
+                    data = {'streamers': {}}
             else:
                 data = {'streamers': {}}
             
@@ -126,12 +130,60 @@ class Discord(object):
             
             elif event == Events.BET_START:
                 streamer_data['bets_placed'] = streamer_data.get('bets_placed', 0) + 1
+                # Essayer d'extraire le montant misé
+                bet_amount_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:K|k|M|m)?\s*(?:channel\s*)?points', message, re.IGNORECASE)
+                if bet_amount_match:
+                    amount_str = bet_amount_match.group(0).lower()
+                    amount = float(bet_amount_match.group(1))
+                    if 'k' in amount_str:
+                        amount *= 1000
+                    elif 'm' in amount_str:
+                        amount *= 1000000
+                    streamer_data['last_bet_amount'] = int(amount)
             
             elif event == Events.BET_WIN:
                 streamer_data['bets_won'] = streamer_data.get('bets_won', 0) + 1
+                # Extraire le gain du pari
+                # Format réel: "WIN, Gained: +2.5K" ou "WIN, Gained: +500"
+                # On cherche le pattern après "Gained:" ou un simple "+X"
+                win_match = re.search(r'(?:Gained|Won|Result):\s*\+?([\d,.]+)\s*(K|k|M|m)?', message, re.IGNORECASE)
+                if not win_match:
+                    # Fallback: chercher juste un "+X"
+                    win_match = re.search(r'\+\s*([\d,.]+)\s*(K|k|M|m)?', message, re.IGNORECASE)
+                
+                if win_match:
+                    # Nettoyer le nombre (enlever les virgules)
+                    win_amount = float(win_match.group(1).replace(',', ''))
+                    unit = win_match.group(2)
+                    if unit and unit.lower() == 'k':
+                        win_amount *= 1000
+                    elif unit and unit.lower() == 'm':
+                        win_amount *= 1000000
+                    win_amount = int(win_amount)
+                    streamer_data['bet_profits'] = streamer_data.get('bet_profits', 0) + win_amount
+                    streamer_data['total_earned'] = streamer_data.get('total_earned', 0) + win_amount
             
             elif event == Events.BET_LOSE:
                 streamer_data['bets_lost'] = streamer_data.get('bets_lost', 0) + 1
+                # Extraire la perte du pari
+                # Format réel: "LOSE, Lost: -2.5K" ou "LOSE, Lost: -500"
+                loss_match = re.search(r'(?:Lost|Result):\s*-?([\d,.]+)\s*(K|k|M|m)?', message, re.IGNORECASE)
+                if not loss_match:
+                    # Fallback: chercher juste un "-X"
+                    loss_match = re.search(r'-\s*([\d,.]+)\s*(K|k|M|m)?', message, re.IGNORECASE)
+                
+                if loss_match:
+                    # Nettoyer le nombre (enlever les virgules)
+                    loss_amount = float(loss_match.group(1).replace(',', ''))
+                    unit = loss_match.group(2)
+                    if unit and unit.lower() == 'k':
+                        loss_amount *= 1000
+                    elif unit and unit.lower() == 'm':
+                        loss_amount *= 1000000
+                    loss_amount = int(loss_amount)
+                    streamer_data['bet_losses'] = streamer_data.get('bet_losses', 0) + loss_amount
+                    # Les pertes sont négatives dans le total
+                    streamer_data['total_earned'] = streamer_data.get('total_earned', 0) - loss_amount
             
             # Sauvegarder
             data['last_update'] = datetime.utcnow().isoformat()

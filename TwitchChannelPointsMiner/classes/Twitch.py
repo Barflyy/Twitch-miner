@@ -1357,18 +1357,23 @@ class Twitch(object):
             )
             return
 
-        # Récupère le data_quality_multiplier si SmartBetTiming V2 l'a injecté
-        data_quality_multiplier = getattr(event, '_data_quality_multiplier', 1.0)
-
-        decision = event.bet.calculate(event.streamer.channel_points, data_quality_multiplier)
+        decision = event.bet.calculate(event.streamer.channel_points)
         # selector_index = 0 if decision["choice"] == "A" else 1
 
         # Log avec la raison si disponible (pour CROWD_WISDOM)
         reason = decision.get("reason", "")
-        log_message = f"Going to complete bet for {event}"
+        strategy = event.streamer.settings.bet.strategy
+        
+        # Log détaillé de la décision
+        log_message = f"🎯 [{strategy}] {event.streamer.username}: {event.title}"
         if reason:
-            log_message += f" - {reason}"
-
+            log_message += f"\n   → {reason}"
+        
+        # Afficher les stats de l'événement
+        total_users = event.bet.total_users
+        total_points = event.bet.total_points
+        log_message += f"\n   📊 {total_users} votants, {_millify(total_points)} points totaux"
+        
         logger.info(
             log_message,
             extra={
