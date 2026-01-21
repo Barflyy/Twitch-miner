@@ -41,6 +41,9 @@
             --success-glow: rgba(48, 209, 88, 0.3);
             --error: #ff453a;
             --error-glow: rgba(255, 69, 58, 0.3);
+            
+            --blue: #0a84ff;
+            --pink: #ff375f;
         }
 
         body {
@@ -49,7 +52,6 @@
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
-            position: relative;
         }
 
         /* Animated Background */
@@ -93,26 +95,9 @@
             animation: float 15s ease-in-out infinite reverse;
         }
 
-        .bg-glow-3 {
-            position: absolute;
-            width: 400px;
-            height: 400px;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: radial-gradient(circle, var(--glow-pink) 0%, transparent 70%);
-            filter: blur(60px);
-            animation: pulse-slow 10s ease-in-out infinite;
-        }
-
         @keyframes float {
             0%, 100% { transform: translateY(0) rotate(0deg); }
             50% { transform: translateY(-50px) rotate(5deg); }
-        }
-
-        @keyframes pulse-slow {
-            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-            50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
         }
 
         /* Main Container */
@@ -120,8 +105,8 @@
             position: relative;
             z-index: 1;
             min-height: 100vh;
-            padding: 32px;
-            max-width: 1600px;
+            padding: 24px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
@@ -130,7 +115,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 40px;
+            margin-bottom: 32px;
             animation: slideDown 0.6s ease-out;
         }
 
@@ -146,36 +131,28 @@
         }
 
         .logo-icon {
-            width: 56px;
-            height: 56px;
+            width: 52px;
+            height: 52px;
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 16px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 28px;
+            font-size: 26px;
             box-shadow: 0 0 30px var(--glow-cyan);
-            animation: glow-pulse 3s ease-in-out infinite;
-        }
-
-        @keyframes glow-pulse {
-            0%, 100% { box-shadow: 0 0 30px var(--glow-cyan); }
-            50% { box-shadow: 0 0 50px var(--glow-purple); }
         }
 
         .logo-text h1 {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 700;
             background: linear-gradient(135deg, var(--text-primary), var(--accent-primary));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
         .logo-text span {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-muted);
-            font-weight: 400;
             letter-spacing: 2px;
             text-transform: uppercase;
         }
@@ -189,33 +166,21 @@
         .status-pill {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             background: var(--glass);
             border: 1px solid var(--glass-border);
             backdrop-filter: blur(20px);
-            padding: 12px 20px;
+            padding: 10px 18px;
             border-radius: 100px;
         }
 
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: var(--success);
-            box-shadow: 0 0 12px var(--success-glow);
+            box-shadow: 0 0 10px var(--success-glow);
             animation: blink 2s ease-in-out infinite;
-        }
-
-        .status-dot.paused {
-            background: var(--accent-gold);
-            box-shadow: 0 0 12px rgba(255, 214, 10, 0.3);
-            animation: none;
-        }
-
-        .status-dot.disabled {
-            background: var(--error);
-            box-shadow: 0 0 12px var(--error-glow);
-            animation: none;
         }
 
         @keyframes blink {
@@ -225,19 +190,18 @@
 
         .status-text {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-secondary);
         }
 
-        /* Control Panel Button */
         .control-btn {
             background: linear-gradient(135deg, var(--accent-secondary), var(--accent-tertiary));
             border: none;
             color: white;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 100px;
             font-family: 'Outfit', sans-serif;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             display: flex;
@@ -251,278 +215,361 @@
             box-shadow: 0 10px 30px rgba(191, 90, 242, 0.3);
         }
 
-        /* Control Panel Overlay */
-        .panel-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+            animation: slideUp 0.6s ease-out 0.1s both;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            backdrop-filter: blur(20px);
             transition: all 0.3s ease;
         }
 
-        .panel-overlay.active {
-            opacity: 1;
-            visibility: visible;
+        .stat-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
         }
 
-        .control-panel {
-            position: fixed;
-            top: 0;
-            right: -480px;
-            width: 480px;
-            height: 100vh;
-            background: var(--bg-primary);
-            border-left: 1px solid var(--glass-border);
-            z-index: 1001;
-            overflow-y: auto;
-            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        .stat-card .label {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
         }
 
-        .control-panel.active {
-            right: 0;
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
-        .panel-header {
-            padding: 24px;
+        .stat-card .value.positive {
+            background: linear-gradient(135deg, var(--success), #5df5a0);
+            -webkit-background-clip: text;
+        }
+
+        .stat-card .value.negative {
+            background: linear-gradient(135deg, var(--error), #ff6b6b);
+            -webkit-background-clip: text;
+        }
+
+        /* Main Content Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            animation: slideUp 0.6s ease-out 0.2s both;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            backdrop-filter: blur(20px);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 20px 24px;
             border-bottom: 1px solid var(--glass-border);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            position: sticky;
-            top: 0;
-            background: var(--bg-primary);
-            z-index: 10;
         }
 
-        .panel-header h2 {
-            font-size: 20px;
+        .section-title {
+            font-size: 16px;
             font-weight: 600;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
-        .close-panel {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            color: var(--text-secondary);
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            cursor: pointer;
+        .section-title .icon {
             font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
         }
 
-        .close-panel:hover {
-            background: var(--error);
-            color: white;
-            border-color: var(--error);
+        .section-badge {
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 100px;
         }
 
-        .panel-content {
-            padding: 24px;
-        }
-
-        .panel-section {
-            margin-bottom: 32px;
-        }
-
-        .panel-section-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        /* Toggle Switch */
-        .setting-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+        .section-content {
             padding: 16px;
-            background: var(--bg-card);
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .section-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .section-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .section-content::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 3px;
+        }
+
+        /* Active Prediction Card */
+        .prediction-card {
+            background: linear-gradient(135deg, rgba(0, 240, 255, 0.05), rgba(191, 90, 242, 0.05));
             border: 1px solid var(--glass-border);
             border-radius: 16px;
+            padding: 20px;
             margin-bottom: 12px;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
         }
 
-        .setting-row:hover {
+        .prediction-card:hover {
             border-color: var(--accent-primary);
         }
 
-        .setting-info {
-            flex: 1;
+        .prediction-card.has-bet {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 20px rgba(255, 214, 10, 0.1);
         }
 
-        .setting-label {
-            font-size: 15px;
-            font-weight: 500;
+        .prediction-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .prediction-streamer {
+            font-size: 12px;
+            color: var(--accent-primary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             margin-bottom: 4px;
         }
 
-        .setting-desc {
+        .prediction-title {
+            font-size: 15px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        .prediction-timer {
+            background: var(--glass);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--accent-gold);
+            flex-shrink: 0;
+        }
+
+        .prediction-timer.urgent {
+            background: rgba(255, 69, 58, 0.2);
+            color: var(--error);
+            animation: pulse-urgent 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-urgent {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .prediction-outcomes {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .outcome {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .outcome.blue { border-left: 3px solid var(--blue); }
+        .outcome.pink { border-left: 3px solid var(--pink); }
+        .outcome.selected {
+            background: rgba(255, 214, 10, 0.1);
+            border-color: var(--accent-gold);
+        }
+
+        .outcome-title {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .outcome-title .check {
+            color: var(--accent-gold);
+        }
+
+        .outcome-stats {
+            display: flex;
+            justify-content: space-between;
             font-size: 12px;
             color: var(--text-muted);
         }
 
-        .toggle {
-            position: relative;
-            width: 52px;
-            height: 28px;
-            flex-shrink: 0;
+        .outcome-stats .odds {
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
         }
 
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            inset: 0;
-            background: var(--glass-border);
-            border-radius: 100px;
-            transition: all 0.3s ease;
-        }
-
-        .toggle-slider::before {
-            content: '';
-            position: absolute;
-            width: 22px;
-            height: 22px;
-            left: 3px;
-            bottom: 3px;
-            background: white;
-            border-radius: 50%;
-            transition: all 0.3s ease;
-        }
-
-        .toggle input:checked + .toggle-slider {
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-        }
-
-        .toggle input:checked + .toggle-slider::before {
-            transform: translateX(24px);
-        }
-
-        /* Slider Input */
-        .slider-row {
-            padding: 16px;
-            background: var(--bg-card);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            margin-bottom: 12px;
-        }
-
-        .slider-header {
+        .our-bet {
+            background: linear-gradient(135deg, rgba(255, 214, 10, 0.1), rgba(255, 214, 10, 0.05));
+            border: 1px solid var(--accent-gold);
+            border-radius: 10px;
+            padding: 12px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
         }
 
-        .slider-value {
+        .our-bet-label {
+            font-size: 12px;
+            color: var(--accent-gold);
+            font-weight: 600;
+        }
+
+        .our-bet-amount {
             font-family: 'JetBrains Mono', monospace;
             font-size: 14px;
-            color: var(--accent-primary);
-            background: rgba(0, 240, 255, 0.1);
-            padding: 4px 12px;
-            border-radius: 8px;
-        }
-
-        .slider-input {
-            width: 100%;
-            height: 6px;
-            -webkit-appearance: none;
-            appearance: none;
-            background: var(--glass-border);
-            border-radius: 3px;
-            outline: none;
-        }
-
-        .slider-input::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 0 15px var(--glow-cyan);
-        }
-
-        .slider-input::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 50%;
-            cursor: pointer;
-            border: none;
-        }
-
-        /* Action Buttons */
-        .action-btn {
-            width: 100%;
-            padding: 16px;
-            border-radius: 16px;
-            font-family: 'Outfit', sans-serif;
-            font-size: 15px;
             font-weight: 600;
-            cursor: pointer;
+        }
+
+        /* Bet History Card */
+        .bet-card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .bet-card:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .bet-card.win { border-left: 3px solid var(--success); }
+        .bet-card.lose { border-left: 3px solid var(--error); }
+        .bet-card.refund { border-left: 3px solid var(--accent-gold); }
+
+        .bet-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
-            transition: all 0.3s ease;
-            margin-bottom: 12px;
-            border: none;
+            font-size: 20px;
+            flex-shrink: 0;
         }
 
-        .action-btn.primary {
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            color: var(--bg-deep);
+        .bet-icon.win { background: rgba(48, 209, 88, 0.15); }
+        .bet-icon.lose { background: rgba(255, 69, 58, 0.15); }
+        .bet-icon.refund { background: rgba(255, 214, 10, 0.15); }
+
+        .bet-info {
+            flex: 1;
+            min-width: 0;
         }
 
-        .action-btn.primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px var(--glow-cyan);
-        }
-
-        .action-btn.danger {
-            background: var(--glass);
-            border: 1px solid var(--error);
-            color: var(--error);
-        }
-
-        .action-btn.danger:hover {
-            background: var(--error);
-            color: white;
-        }
-
-        .action-btn.secondary {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            color: var(--text-secondary);
-        }
-
-        .action-btn.secondary:hover {
-            border-color: var(--accent-primary);
+        .bet-streamer {
+            font-size: 11px;
             color: var(--accent-primary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .bet-title {
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 2px 0;
+        }
+
+        .bet-choice {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .bet-result {
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .bet-profit {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .bet-profit.positive { color: var(--success); }
+        .bet-profit.negative { color: var(--error); }
+        .bet-profit.neutral { color: var(--accent-gold); }
+
+        .bet-amount {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .bet-time {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 14px;
         }
 
         /* Toast Notifications */
@@ -551,594 +598,290 @@
 
         .toast.success { border-color: var(--success); }
         .toast.error { border-color: var(--error); }
-        .toast.info { border-color: var(--accent-primary); }
-
-        .toast-icon {
-            font-size: 20px;
-        }
-
-        .toast-message {
-            font-size: 14px;
-            color: var(--text-primary);
-        }
 
         @keyframes slideInToast {
             from { opacity: 0; transform: translateX(100px); }
             to { opacity: 1; transform: translateX(0); }
         }
 
-        /* Stats Hero Section */
-        .stats-hero {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 32px;
-            animation: slideUp 0.6s ease-out 0.1s both;
-        }
-
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .hero-card {
-            background: var(--bg-card);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 32px;
-            backdrop-filter: blur(20px);
-            position: relative;
-            overflow: hidden;
+        /* Control Panel */
+        .panel-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
             transition: all 0.3s ease;
         }
 
-        .hero-card::before {
-            content: '';
-            position: absolute;
+        .panel-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .control-panel {
+            position: fixed;
             top: 0;
-            left: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background: var(--bg-primary);
+            border-left: 1px solid var(--glass-border);
+            z-index: 1001;
+            overflow-y: auto;
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .control-panel.active {
             right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
-            opacity: 0.5;
         }
 
-        .hero-card:hover {
-            transform: translateY(-4px);
-            border-color: var(--accent-primary);
-            box-shadow: 0 20px 40px rgba(0, 240, 255, 0.1);
-        }
-
-        .hero-card.main {
-            background: linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(191, 90, 242, 0.1));
-        }
-
-        .hero-card .label {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .hero-card .value {
-            font-size: 48px;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-            background: linear-gradient(135deg, var(--text-primary), var(--accent-primary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            line-height: 1;
-        }
-
-        .hero-card .value.positive {
-            background: linear-gradient(135deg, var(--success), #5df5a0);
-            -webkit-background-clip: text;
-            background-clip: text;
-        }
-
-        .hero-card .value.negative {
-            background: linear-gradient(135deg, var(--error), #ff6b6b);
-            -webkit-background-clip: text;
-            background-clip: text;
-        }
-
-        .hero-card .sub {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-top: 12px;
-        }
-
-        /* Secondary Stats */
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 40px;
-            animation: slideUp 0.6s ease-out 0.2s both;
-        }
-
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 24px;
-            backdrop-filter: blur(20px);
-            transition: all 0.3s ease;
-            position: relative;
-        }
-
-        .stat-card:hover {
-            border-color: var(--accent-secondary);
-            transform: translateY(-2px);
-        }
-
-        .stat-card .icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            margin-bottom: 16px;
-        }
-
-        .stat-card .icon.cyan { background: rgba(0, 240, 255, 0.15); }
-        .stat-card .icon.purple { background: rgba(191, 90, 242, 0.15); }
-        .stat-card .icon.green { background: rgba(48, 209, 88, 0.15); }
-        .stat-card .icon.gold { background: rgba(255, 214, 10, 0.15); }
-
-        .stat-card .value {
-            font-size: 32px;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-primary);
-        }
-
-        .stat-card .label {
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        /* Section Title */
-        .section-header {
+        .panel-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--glass-border);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
-            animation: slideUp 0.6s ease-out 0.3s both;
+            position: sticky;
+            top: 0;
+            background: var(--bg-primary);
         }
 
-        .section-title {
-            font-size: 20px;
+        .panel-header h2 {
+            font-size: 18px;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 12px;
         }
 
-        .section-title::before {
-            content: '';
-            width: 4px;
-            height: 24px;
-            background: linear-gradient(180deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 2px;
-        }
-
-        /* Filters */
-        .filters {
-            display: flex;
-            gap: 8px;
-        }
-
-        .filter-btn {
+        .close-panel {
             background: var(--glass);
             border: 1px solid var(--glass-border);
             color: var(--text-secondary);
-            padding: 10px 20px;
-            border-radius: 100px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
             cursor: pointer;
-            font-family: 'Outfit', sans-serif;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-
-        .filter-btn:hover {
-            background: var(--bg-card-hover);
-            color: var(--text-primary);
-        }
-
-        .filter-btn.active {
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            color: var(--bg-deep);
-            border-color: transparent;
-            font-weight: 600;
-        }
-
-        .search-box {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            color: var(--text-primary);
-            padding: 10px 20px;
-            border-radius: 100px;
-            font-family: 'Outfit', sans-serif;
-            font-size: 14px;
-            width: 280px;
-            transition: all 0.2s ease;
-        }
-
-        .search-box::placeholder { color: var(--text-muted); }
-
-        .search-box:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 20px var(--glow-cyan);
-        }
-
-        /* Streamers Grid */
-        .streamers-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 16px;
-            animation: slideUp 0.6s ease-out 0.4s both;
-        }
-
-        .streamer-card {
-            background: var(--bg-card);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 20px;
-            backdrop-filter: blur(20px);
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .streamer-card::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, transparent, rgba(0, 240, 255, 0.05));
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .streamer-card:hover {
-            transform: translateY(-4px) scale(1.01);
-            border-color: var(--accent-primary);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .streamer-card:hover::after { opacity: 1; }
-
-        .streamer-card.online {
-            border-left: 3px solid var(--success);
-        }
-
-        .streamer-card.disabled {
-            opacity: 0.5;
-        }
-
-        .avatar {
-            width: 56px;
-            height: 56px;
-            border-radius: 16px;
-            background: linear-gradient(135deg, var(--accent-secondary), var(--accent-tertiary));
+            font-size: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 700;
-            font-size: 20px;
-            text-transform: uppercase;
-            flex-shrink: 0;
-            position: relative;
         }
 
-        .avatar.online::after {
-            content: '';
-            position: absolute;
-            bottom: -4px;
-            right: -4px;
-            width: 16px;
-            height: 16px;
-            background: var(--success);
-            border: 3px solid var(--bg-card);
-            border-radius: 50%;
-            box-shadow: 0 0 10px var(--success-glow);
-        }
-
-        .streamer-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .streamer-name {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .live-badge {
+        .close-panel:hover {
             background: var(--error);
             color: white;
-            font-size: 10px;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            animation: pulse-badge 2s ease-in-out infinite;
         }
 
-        @keyframes pulse-badge {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
+        .panel-content {
+            padding: 20px;
         }
 
-        .streamer-stats {
-            font-size: 13px;
+        .panel-section {
+            margin-bottom: 24px;
+        }
+
+        .panel-section-title {
+            font-size: 11px;
+            font-weight: 600;
             color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
         }
 
-        .streamer-points {
-            text-align: right;
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            margin-bottom: 8px;
         }
 
-        .points-value {
-            font-size: 24px;
-            font-weight: 700;
+        .setting-label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .toggle {
+            position: relative;
+            width: 48px;
+            height: 26px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--glass-border);
+            border-radius: 100px;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+        }
+
+        .toggle input:checked + .toggle-slider::before {
+            transform: translateX(22px);
+        }
+
+        .slider-row {
+            padding: 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .slider-value {
             font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
             color: var(--accent-primary);
         }
 
-        .points-session {
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            margin-top: 4px;
+        .slider-input {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: var(--glass-border);
+            border-radius: 2px;
         }
 
-        .points-session.positive { color: var(--success); }
-        .points-session.negative { color: var(--error); }
-
-        /* Streamer Toggle */
-        .streamer-toggle {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 5;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 11px;
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            opacity: 0;
-        }
-
-        .streamer-card:hover .streamer-toggle {
-            opacity: 1;
-        }
-
-        .streamer-toggle:hover {
+        .slider-input::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
             background: var(--accent-primary);
-            color: var(--bg-deep);
-            border-color: var(--accent-primary);
+            border-radius: 50%;
+            cursor: pointer;
         }
 
-        /* Betting Section */
-        .betting-section {
-            margin-top: 48px;
-            animation: slideUp 0.6s ease-out 0.5s both;
-        }
-
-        .betting-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 16px;
-        }
-
-        .bet-card {
-            background: var(--bg-card);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 28px 24px;
-            text-align: center;
-            backdrop-filter: blur(20px);
+        .action-btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            border: none;
             transition: all 0.3s ease;
         }
 
-        .bet-card:hover {
-            transform: translateY(-4px);
-            border-color: var(--accent-secondary);
+        .action-btn.primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
         }
 
-        .bet-card .icon {
-            font-size: 36px;
-            margin-bottom: 16px;
-            display: block;
+        .action-btn.danger {
+            background: transparent;
+            border: 1px solid var(--error);
+            color: var(--error);
         }
 
-        .bet-card .value {
-            font-size: 28px;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-primary);
-        }
-
-        .bet-card .value.green { color: var(--success); }
-        .bet-card .value.red { color: var(--error); }
-
-        .bet-card .label {
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-top: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        /* Loading */
-        .loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 80px;
-            gap: 20px;
-        }
-
-        .loader {
-            width: 48px;
-            height: 48px;
-            border: 3px solid var(--glass-border);
-            border-top-color: var(--accent-primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .loading-text {
-            font-size: 14px;
-            color: var(--text-muted);
-            font-family: 'JetBrains Mono', monospace;
+        .action-btn.danger:hover {
+            background: var(--error);
+            color: white;
         }
 
         /* Footer */
         .footer {
-            margin-top: 60px;
-            padding: 24px 0;
+            margin-top: 32px;
+            padding: 20px 0;
             text-align: center;
             border-top: 1px solid var(--glass-border);
-            animation: slideUp 0.6s ease-out 0.6s both;
-        }
-
-        .footer-content {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 24px;
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-muted);
         }
 
         .footer a {
             color: var(--accent-primary);
             text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .footer a:hover {
-            color: var(--accent-secondary);
-        }
-
-        .footer-divider {
-            width: 4px;
-            height: 4px;
-            border-radius: 50%;
-            background: var(--text-muted);
         }
 
         /* Responsive */
         @media (max-width: 1200px) {
-            .stats-hero {
-                grid-template-columns: 1fr 1fr;
-            }
-            .stats-hero .hero-card.main {
-                grid-column: span 2;
-            }
-            .stats-row {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .betting-grid {
+            .stats-grid {
                 grid-template-columns: repeat(3, 1fr);
             }
         }
 
-        @media (max-width: 768px) {
-            .app { padding: 20px; }
-            .header { flex-direction: column; gap: 20px; }
-            .header-actions { width: 100%; justify-content: center; flex-wrap: wrap; }
-            .stats-hero { grid-template-columns: 1fr; }
-            .stats-hero .hero-card.main { grid-column: span 1; }
-            .hero-card .value { font-size: 36px; }
-            .stats-row { grid-template-columns: 1fr 1fr; }
-            .section-header { flex-direction: column; gap: 16px; align-items: flex-start; }
-            .filters { flex-wrap: wrap; }
-            .search-box { width: 100%; }
-            .streamers-grid { grid-template-columns: 1fr; }
-            .betting-grid { grid-template-columns: repeat(2, 1fr); }
+        @media (max-width: 900px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .app { padding: 16px; }
+            .header { flex-direction: column; gap: 16px; }
+            .header-actions { width: 100%; justify-content: center; }
             .control-panel { width: 100%; right: -100%; }
         }
 
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-muted);
-        }
-
-        .empty-state .icon {
-            font-size: 48px;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
-        /* Quick Stats Bar */
-        .quick-stats {
-            display: flex;
-            gap: 24px;
-            padding: 12px 20px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            margin-bottom: 24px;
-            animation: slideUp 0.6s ease-out 0.05s both;
-        }
-
-        .quick-stat {
-            display: flex;
+        /* Live indicator */
+        .live-pulse {
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            gap: 6px;
+            background: rgba(255, 69, 58, 0.15);
+            color: var(--error);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .quick-stat .dot {
-            width: 8px;
-            height: 8px;
+        .live-pulse::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--error);
             border-radius: 50%;
+            animation: pulse-dot 1.5s ease-in-out infinite;
         }
 
-        .quick-stat .dot.green { background: var(--success); }
-        .quick-stat .dot.yellow { background: var(--accent-gold); }
-        .quick-stat .dot.red { background: var(--error); }
-
-        .quick-stat .label {
-            color: var(--text-muted);
-        }
-
-        .quick-stat .value {
-            color: var(--text-primary);
-            font-weight: 600;
-            font-family: 'JetBrains Mono', monospace;
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
         }
     </style>
 </head>
@@ -1148,170 +891,41 @@
         <div class="bg-grid"></div>
         <div class="bg-glow-1"></div>
         <div class="bg-glow-2"></div>
-        <div class="bg-glow-3"></div>
     </div>
 
-    <!-- Control Panel Overlay -->
     <div class="panel-overlay" onclick="togglePanel()"></div>
 
-    <!-- Control Panel -->
     <div class="control-panel" id="control-panel">
         <div class="panel-header">
             <h2>⚙️ Paramètres</h2>
             <button class="close-panel" onclick="togglePanel()">✕</button>
         </div>
         <div class="panel-content">
-            <!-- Bot Control -->
             <div class="panel-section">
-                <div class="panel-section-title">🤖 Contrôle du Bot</div>
-                
+                <div class="panel-section-title">🤖 Contrôle</div>
                 <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Bot Activé</div>
-                        <div class="setting-desc">Activer/désactiver toute l'activité du bot</div>
-                    </div>
+                    <span class="setting-label">Bot Activé</span>
                     <label class="toggle">
                         <input type="checkbox" id="setting-bot-enabled" onchange="updateSetting('bot_enabled', this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                
                 <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Paris Activés</div>
-                        <div class="setting-desc">Permettre au bot de placer des paris</div>
-                    </div>
+                    <span class="setting-label">Paris Activés</span>
                     <label class="toggle">
                         <input type="checkbox" id="setting-betting-enabled" onchange="updateSetting('betting_enabled', this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                
                 <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Mode Stealth</div>
-                        <div class="setting-desc">Délai aléatoire pour éviter la détection</div>
-                    </div>
+                    <span class="setting-label">Mode Stealth</span>
                     <label class="toggle">
                         <input type="checkbox" id="setting-stealth-mode" onchange="updateSetting('stealth_mode', this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-            </div>
-
-            <!-- Betting Settings -->
-            <div class="panel-section">
-                <div class="panel-section-title">🎲 Paramètres de Paris</div>
-                
-                <div class="slider-row">
-                    <div class="slider-header">
-                        <div class="setting-label">Pourcentage de mise</div>
-                        <div class="slider-value" id="bet-percentage-value">5%</div>
-                    </div>
-                    <input type="range" class="slider-input" id="setting-bet-percentage" 
-                           min="1" max="25" value="5" 
-                           oninput="updateSlider('bet_percentage', this.value, '%')">
-                </div>
-                
-                <div class="slider-row">
-                    <div class="slider-header">
-                        <div class="setting-label">Mise Maximum</div>
-                        <div class="slider-value" id="max-points-value">30K</div>
-                    </div>
-                    <input type="range" class="slider-input" id="setting-max-points" 
-                           min="1000" max="100000" step="1000" value="30000" 
-                           oninput="updateSlider('max_points', this.value, 'K', 1000)">
-                </div>
-                
-                <div class="slider-row">
-                    <div class="slider-header">
-                        <div class="setting-label">Solde Minimum pour Parier</div>
-                        <div class="slider-value" id="min-balance-value">5K</div>
-                    </div>
-                    <input type="range" class="slider-input" id="setting-min-balance" 
-                           min="0" max="50000" step="1000" value="5000" 
-                           oninput="updateSlider('min_balance', this.value, 'K', 1000)">
-                </div>
-                
-                <div class="slider-row">
-                    <div class="slider-header">
-                        <div class="setting-label">Votants Minimum</div>
-                        <div class="slider-value" id="min-voters-value">30</div>
-                    </div>
-                    <input type="range" class="slider-input" id="setting-min-voters" 
-                           min="5" max="100" value="30" 
-                           oninput="updateSlider('min_voters', this.value)">
-                </div>
-                
-                <div class="slider-row">
-                    <div class="slider-header">
-                        <div class="setting-label">Délai avant Fin (sec)</div>
-                        <div class="slider-value" id="delay-seconds-value">10s</div>
-                    </div>
-                    <input type="range" class="slider-input" id="setting-delay-seconds" 
-                           min="5" max="60" value="10" 
-                           oninput="updateSlider('delay_seconds', this.value, 's')">
-                </div>
-            </div>
-
-            <!-- Collect Settings -->
-            <div class="panel-section">
-                <div class="panel-section-title">🎁 Collecte</div>
-                
                 <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Bonus Auto</div>
-                        <div class="setting-desc">Réclamer automatiquement les bonus</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="setting-auto-claim-bonus" onchange="updateSetting('auto_claim_bonus', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Suivre les Raids</div>
-                        <div class="setting-desc">Suivre automatiquement les raids</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="setting-follow-raid" onchange="updateSetting('follow_raid', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Réclamer les Drops</div>
-                        <div class="setting-desc">Collecter les drops Twitch</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="setting-claim-drops" onchange="updateSetting('claim_drops', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Watch Streak</div>
-                        <div class="setting-desc">Maintenir les séries de visionnage</div>
-                    </div>
-                    <label class="toggle">
-                        <input type="checkbox" id="setting-watch-streak" onchange="updateSetting('watch_streak', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Notifications -->
-            <div class="panel-section">
-                <div class="panel-section-title">🔔 Notifications</div>
-                
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-label">Sons</div>
-                        <div class="setting-desc">Jouer un son lors des événements</div>
-                    </div>
+                    <span class="setting-label">Sons</span>
                     <label class="toggle">
                         <input type="checkbox" id="setting-sound-notifications" onchange="updateSetting('sound_notifications', this.checked)">
                         <span class="toggle-slider"></span>
@@ -1319,26 +933,39 @@
                 </div>
             </div>
 
-            <!-- Actions -->
+            <div class="panel-section">
+                <div class="panel-section-title">🎲 Paris</div>
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <span class="setting-label">Pourcentage</span>
+                        <span class="slider-value" id="bet-percentage-value">5%</span>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-bet-percentage" min="1" max="25" value="5" oninput="updateSlider('bet_percentage', this.value, '%')">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <span class="setting-label">Max Points</span>
+                        <span class="slider-value" id="max-points-value">30K</span>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-max-points" min="1000" max="100000" step="1000" value="30000" oninput="updateSlider('max_points', this.value, '', 1000)">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-header">
+                        <span class="setting-label">Min Votants</span>
+                        <span class="slider-value" id="min-voters-value">30</span>
+                    </div>
+                    <input type="range" class="slider-input" id="setting-min-voters" min="5" max="100" value="30" oninput="updateSlider('min_voters', this.value)">
+                </div>
+            </div>
+
             <div class="panel-section">
                 <div class="panel-section-title">⚡ Actions</div>
-                
-                <button class="action-btn primary" onclick="saveAllSettings()">
-                    💾 Sauvegarder les Paramètres
-                </button>
-                
-                <button class="action-btn secondary" onclick="resetSettings()">
-                    🔄 Réinitialiser les Paramètres
-                </button>
-                
-                <button class="action-btn danger" onclick="resetStats()">
-                    🗑️ Remettre les Stats à Zéro
-                </button>
+                <button class="action-btn primary" onclick="saveAllSettings()">💾 Sauvegarder</button>
+                <button class="action-btn danger" onclick="resetStats()">🗑️ Reset Stats</button>
             </div>
         </div>
     </div>
 
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <div class="app">
@@ -1347,154 +974,84 @@
                 <div class="logo-icon">⛏️</div>
                 <div class="logo-text">
                     <h1>Twitch Miner</h1>
-                    <span>Channel Points Dashboard</span>
+                    <span>Betting Dashboard</span>
                 </div>
             </div>
             <div class="header-actions">
                 <div class="status-pill">
-                    <div class="status-dot" id="status-dot"></div>
+                    <div class="status-dot"></div>
                     <span class="status-text" id="last-update">Connexion...</span>
                 </div>
-                <button class="control-btn" onclick="togglePanel()">
-                    ⚙️ Paramètres
-                </button>
+                <button class="control-btn" onclick="togglePanel()">⚙️ Config</button>
             </div>
         </header>
 
-        <!-- Quick Stats Bar -->
-        <div class="quick-stats" id="quick-stats">
-            <div class="quick-stat">
-                <span class="dot green" id="bot-status-dot"></span>
-                <span class="label">Bot:</span>
-                <span class="value" id="bot-status-text">Actif</span>
-            </div>
-            <div class="quick-stat">
-                <span class="dot" id="betting-status-dot"></span>
-                <span class="label">Paris:</span>
-                <span class="value" id="betting-status-text">Actifs</span>
-            </div>
-            <div class="quick-stat">
-                <span class="dot" id="stealth-status-dot"></span>
-                <span class="label">Stealth:</span>
-                <span class="value" id="stealth-status-text">On</span>
-            </div>
-            <div class="quick-stat">
-                <span class="label">Mise:</span>
-                <span class="value" id="quick-bet-percent">5%</span>
-            </div>
-            <div class="quick-stat">
-                <span class="label">Max:</span>
-                <span class="value" id="quick-max-points">30K</span>
-            </div>
-        </div>
-
-        <!-- Hero Stats -->
-        <div class="stats-hero">
-            <div class="hero-card main">
-                <div class="label">💎 Total des Points</div>
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">💎 Total Points</div>
                 <div class="value" id="total-points">—</div>
-                <div class="sub" id="total-sub">Chargement des données...</div>
             </div>
-            <div class="hero-card">
-                <div class="label">📈 Gains Session</div>
+            <div class="stat-card">
+                <div class="label">📈 Session</div>
                 <div class="value positive" id="session-gains">—</div>
-                <div class="sub" id="session-sub">depuis le démarrage</div>
             </div>
-            <div class="hero-card">
+            <div class="stat-card">
+                <div class="label">🎯 Win Rate</div>
+                <div class="value" id="win-rate">—</div>
+            </div>
+            <div class="stat-card">
                 <div class="label">💰 Profit Paris</div>
                 <div class="value" id="bet-profit">—</div>
-                <div class="sub" id="bet-profit-sub">gains - pertes</div>
-            </div>
-        </div>
-
-        <!-- Secondary Stats -->
-        <div class="stats-row">
-            <div class="stat-card">
-                <div class="icon cyan">🟢</div>
-                <div class="value" id="online-count">—</div>
-                <div class="label">Streamers en ligne</div>
             </div>
             <div class="stat-card">
-                <div class="icon purple">📺</div>
-                <div class="value" id="total-streamers">—</div>
-                <div class="label">Total streamers</div>
-            </div>
-            <div class="stat-card">
-                <div class="icon green">🎯</div>
-                <div class="value" id="win-rate">—</div>
-                <div class="label">Win Rate</div>
-            </div>
-            <div class="stat-card">
-                <div class="icon gold">🎲</div>
+                <div class="label">🎲 Paris</div>
                 <div class="value" id="total-bets">—</div>
-                <div class="label">Paris placés</div>
             </div>
         </div>
 
-        <!-- Streamers Section -->
-        <div class="section-header">
-            <h2 class="section-title">Streamers</h2>
-            <div class="filters">
-                <button class="filter-btn active" onclick="setFilter('all')">Tous</button>
-                <button class="filter-btn" onclick="setFilter('online')">🟢 En ligne</button>
-                <button class="filter-btn" onclick="setFilter('offline')">⚫ Hors ligne</button>
-                <input type="text" class="search-box" placeholder="🔍 Rechercher..." id="search-input" oninput="filterStreamers()">
+        <!-- Main Content -->
+        <div class="main-grid">
+            <!-- Active Predictions -->
+            <div class="section">
+                <div class="section-header">
+                    <div class="section-title">
+                        <span class="icon">🔴</span>
+                        Paris en Cours
+                    </div>
+                    <span class="section-badge" id="active-count">0</span>
+                </div>
+                <div class="section-content" id="active-predictions">
+                    <div class="empty-state">
+                        <div class="icon">🎲</div>
+                        <p>Aucune prédiction active</p>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div class="streamers-grid" id="streamers-grid">
-            <div class="loading">
-                <div class="loader"></div>
-                <span class="loading-text">Chargement des streamers...</span>
-            </div>
-        </div>
-
-        <!-- Betting Stats -->
-        <div class="betting-section">
-            <div class="section-header">
-                <h2 class="section-title">Statistiques de Paris</h2>
-            </div>
-            <div class="betting-grid">
-                <div class="bet-card">
-                    <span class="icon">🎯</span>
-                    <div class="value" id="bets-total">—</div>
-                    <div class="label">Paris placés</div>
+            <!-- Bet History -->
+            <div class="section">
+                <div class="section-header">
+                    <div class="section-title">
+                        <span class="icon">📜</span>
+                        Historique
+                    </div>
+                    <span class="section-badge" id="history-count">0</span>
                 </div>
-                <div class="bet-card">
-                    <span class="icon">✅</span>
-                    <div class="value green" id="bets-won">—</div>
-                    <div class="label">Gagnés</div>
-                </div>
-                <div class="bet-card">
-                    <span class="icon">❌</span>
-                    <div class="value red" id="bets-lost">—</div>
-                    <div class="label">Perdus</div>
-                </div>
-                <div class="bet-card">
-                    <span class="icon">💵</span>
-                    <div class="value green" id="total-profits">—</div>
-                    <div class="label">Profits</div>
-                </div>
-                <div class="bet-card">
-                    <span class="icon">📉</span>
-                    <div class="value red" id="total-losses">—</div>
-                    <div class="label">Pertes</div>
+                <div class="section-content" id="bet-history">
+                    <div class="empty-state">
+                        <div class="icon">📊</div>
+                        <p>Aucun pari enregistré</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <footer class="footer">
-            <div class="footer-content">
-                <span>Twitch Channel Points Miner</span>
-                <div class="footer-divider"></div>
-                <a href="https://github.com/rdavydov/Twitch-Channel-Points-Miner-v2" target="_blank">GitHub</a>
-                <div class="footer-divider"></div>
-                <span>Auto-refresh 30s</span>
-            </div>
+            Twitch Miner • <a href="https://github.com/rdavydov/Twitch-Channel-Points-Miner-v2" target="_blank">GitHub</a> • Auto-refresh 5s
         </footer>
     </div>
 
-    <!-- Audio elements for notifications -->
     <audio id="sound-win" preload="auto">
         <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ck4l9dXV9iJScoJqRhXdtZWdtd4OOlpqYkol9c21rbXV+iZGVlY+Gg3x2dHV4fYOJjo+Ni4eDf3x6e3t+goaIiomHhYKAf359foCCg4WFhoaFhIOCgoGAgYGBgYKCgoODgoKBgYGAgIGBgYGBgYGBgYGBgYGBgA==" type="audio/wav">
     </audio>
@@ -1504,12 +1061,12 @@
 
     <script>
         let streamersData = [];
-        let currentFilter = 'all';
+        let activePredictions = [];
+        let betHistory = [];
         let settings = {};
         let previousBetsWon = 0;
         let previousBetsLost = 0;
 
-        // Format helpers
         function formatNumber(num) {
             if (num === undefined || num === null) return '—';
             if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -1525,28 +1082,30 @@
             return formatted;
         }
 
-        // Toast notifications
+        function timeAgo(timestamp) {
+            if (!timestamp) return '';
+            const now = new Date();
+            const date = new Date(timestamp);
+            const diff = Math.floor((now - date) / 1000);
+            
+            if (diff < 60) return 'à l\'instant';
+            if (diff < 3600) return Math.floor(diff / 60) + 'min';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+            return Math.floor(diff / 86400) + 'j';
+        }
+
         function showToast(message, type = 'info') {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            
-            const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-            toast.innerHTML = `
-                <span class="toast-icon">${icons[type]}</span>
-                <span class="toast-message">${message}</span>
-            `;
-            
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : '❌'}</span><span>${message}</span>`;
             container.appendChild(toast);
-            
             setTimeout(() => {
                 toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100px)';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
 
-        // Sound notifications
         function playSound(type) {
             if (!settings.sound_notifications) return;
             const audio = document.getElementById(`sound-${type}`);
@@ -1556,111 +1115,47 @@
             }
         }
 
-        // Panel toggle
         function togglePanel() {
-            const panel = document.getElementById('control-panel');
-            const overlay = document.querySelector('.panel-overlay');
-            panel.classList.toggle('active');
-            overlay.classList.toggle('active');
+            document.getElementById('control-panel').classList.toggle('active');
+            document.querySelector('.panel-overlay').classList.toggle('active');
         }
 
-        // Load settings from API
         async function loadSettings() {
             try {
                 const res = await fetch('/api/settings');
                 if (res.ok) {
                     settings = await res.json();
                     applySettingsToUI();
-                    updateQuickStats();
                 }
-            } catch (e) {
-                console.error('Error loading settings:', e);
-            }
+            } catch (e) {}
         }
 
-        // Apply settings to UI controls
         function applySettingsToUI() {
             document.getElementById('setting-bot-enabled').checked = settings.bot_enabled ?? true;
             document.getElementById('setting-betting-enabled').checked = settings.betting_enabled ?? true;
             document.getElementById('setting-stealth-mode').checked = settings.stealth_mode ?? true;
-            document.getElementById('setting-auto-claim-bonus').checked = settings.auto_claim_bonus ?? true;
-            document.getElementById('setting-follow-raid').checked = settings.follow_raid ?? true;
-            document.getElementById('setting-claim-drops').checked = settings.claim_drops ?? true;
-            document.getElementById('setting-watch-streak').checked = settings.watch_streak ?? true;
             document.getElementById('setting-sound-notifications').checked = settings.sound_notifications ?? true;
             
-            // Sliders
-            const betPct = settings.bet_percentage ?? 5;
-            document.getElementById('setting-bet-percentage').value = betPct;
-            document.getElementById('bet-percentage-value').textContent = betPct + '%';
+            document.getElementById('setting-bet-percentage').value = settings.bet_percentage ?? 5;
+            document.getElementById('bet-percentage-value').textContent = (settings.bet_percentage ?? 5) + '%';
             
-            const maxPts = settings.max_points ?? 30000;
-            document.getElementById('setting-max-points').value = maxPts;
-            document.getElementById('max-points-value').textContent = formatNumber(maxPts);
+            document.getElementById('setting-max-points').value = settings.max_points ?? 30000;
+            document.getElementById('max-points-value').textContent = formatNumber(settings.max_points ?? 30000);
             
-            const minBal = settings.min_balance ?? 5000;
-            document.getElementById('setting-min-balance').value = minBal;
-            document.getElementById('min-balance-value').textContent = formatNumber(minBal);
-            
-            const minVoters = settings.min_voters ?? 30;
-            document.getElementById('setting-min-voters').value = minVoters;
-            document.getElementById('min-voters-value').textContent = minVoters;
-            
-            const delay = settings.delay_seconds ?? 10;
-            document.getElementById('setting-delay-seconds').value = delay;
-            document.getElementById('delay-seconds-value').textContent = delay + 's';
+            document.getElementById('setting-min-voters').value = settings.min_voters ?? 30;
+            document.getElementById('min-voters-value').textContent = settings.min_voters ?? 30;
         }
 
-        // Update quick stats bar
-        function updateQuickStats() {
-            // Bot status
-            const botDot = document.getElementById('bot-status-dot');
-            const botText = document.getElementById('bot-status-text');
-            botDot.className = 'dot ' + (settings.bot_enabled ? 'green' : 'red');
-            botText.textContent = settings.bot_enabled ? 'Actif' : 'Arrêté';
-            
-            // Main status dot
-            const statusDot = document.getElementById('status-dot');
-            if (!settings.bot_enabled) {
-                statusDot.className = 'status-dot disabled';
-            } else if (!settings.betting_enabled) {
-                statusDot.className = 'status-dot paused';
-            } else {
-                statusDot.className = 'status-dot';
-            }
-            
-            // Betting status
-            const betDot = document.getElementById('betting-status-dot');
-            const betText = document.getElementById('betting-status-text');
-            betDot.className = 'dot ' + (settings.betting_enabled ? 'green' : 'yellow');
-            betText.textContent = settings.betting_enabled ? 'Actifs' : 'Désactivés';
-            
-            // Stealth status
-            const stealthDot = document.getElementById('stealth-status-dot');
-            const stealthText = document.getElementById('stealth-status-text');
-            stealthDot.className = 'dot ' + (settings.stealth_mode ? 'green' : 'yellow');
-            stealthText.textContent = settings.stealth_mode ? 'On' : 'Off';
-            
-            // Values
-            document.getElementById('quick-bet-percent').textContent = (settings.bet_percentage ?? 5) + '%';
-            document.getElementById('quick-max-points').textContent = formatNumber(settings.max_points ?? 30000);
-        }
-
-        // Update setting
-        async function updateSetting(key, value) {
+        function updateSetting(key, value) {
             settings[key] = value;
-            updateQuickStats();
         }
 
-        // Update slider
         function updateSlider(key, value, suffix = '', divisor = 1) {
             settings[key] = parseInt(value);
-            const displayValue = divisor > 1 ? formatNumber(value) : value + (suffix || '');
-            document.getElementById(key.replace('_', '-') + '-value').textContent = displayValue;
-            updateQuickStats();
+            const display = divisor > 1 ? formatNumber(value) : value + suffix;
+            document.getElementById(key.replace('_', '-') + '-value').textContent = display;
         }
 
-        // Save all settings
         async function saveAllSettings() {
             try {
                 const res = await fetch('/api/settings', {
@@ -1668,87 +1163,63 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(settings)
                 });
-                
-                if (res.ok) {
-                    showToast('Paramètres sauvegardés !', 'success');
-                } else {
-                    showToast('Erreur lors de la sauvegarde', 'error');
-                }
-            } catch (e) {
-                showToast('Erreur de connexion', 'error');
-            }
-        }
-
-        // Reset settings
-        async function resetSettings() {
-            if (!confirm('Réinitialiser tous les paramètres ?')) return;
-            
-            try {
-                const res = await fetch('/api/settings/reset', { method: 'POST' });
-                if (res.ok) {
-                    const data = await res.json();
-                    settings = data.settings;
-                    applySettingsToUI();
-                    updateQuickStats();
-                    showToast('Paramètres réinitialisés', 'success');
-                }
+                if (res.ok) showToast('Paramètres sauvegardés !', 'success');
             } catch (e) {
                 showToast('Erreur', 'error');
             }
         }
 
-        // Reset stats
         async function resetStats() {
-            if (!confirm('Remettre toutes les statistiques à zéro ?')) return;
-            
+            if (!confirm('Remettre les stats à zéro ?')) return;
             try {
                 const res = await fetch('/api/stats/reset', { method: 'POST' });
                 if (res.ok) {
-                    showToast('Statistiques réinitialisées !', 'success');
+                    showToast('Stats réinitialisées', 'success');
                     loadData();
                 }
-            } catch (e) {
-                showToast('Erreur', 'error');
-            }
+            } catch (e) {}
         }
 
-        // Toggle streamer
-        async function toggleStreamer(name, e) {
-            e.stopPropagation();
-            try {
-                const res = await fetch(`/api/streamer/${name}/toggle`, { method: 'POST' });
-                if (res.ok) {
-                    const data = await res.json();
-                    showToast(`${name} ${data.enabled ? 'activé' : 'désactivé'}`, 'info');
-                    loadData();
-                }
-            } catch (e) {
-                showToast('Erreur', 'error');
-            }
-        }
-
-        // Load data
         async function loadData() {
             try {
-                const res = await fetch('/bot_data.json?t=' + Date.now());
-                if (!res.ok) throw new Error('Network error');
+                const [dataRes, historyRes, activeRes] = await Promise.all([
+                    fetch('/bot_data.json?t=' + Date.now()),
+                    fetch('/api/bets/history'),
+                    fetch('/api/bets/active')
+                ]);
 
-                const data = await res.json();
-                const streamersMap = data.streamers || {};
+                if (dataRes.ok) {
+                    const data = await dataRes.json();
+                    streamersData = Object.entries(data.streamers || {}).map(([name, d]) => ({
+                        name,
+                        points: d.balance || 0,
+                        startingBalance: d.starting_balance || d.balance || 0,
+                        sessionPoints: d.session_points || 0,
+                        betsPlaced: d.bets_placed || 0,
+                        betsWon: d.bets_won || 0,
+                        betsLost: d.bets_lost || 0,
+                        betProfits: d.bet_profits || 0,
+                        betLosses: d.bet_losses || 0,
+                    }));
+                    
+                    // Get from bot_data directly
+                    activePredictions = data.active_predictions || [];
+                    betHistory = data.bet_history || [];
+                }
 
-                streamersData = Object.entries(streamersMap).map(([name, d]) => ({
-                    name,
-                    points: d.balance || 0,
-                    startingBalance: d.starting_balance || d.balance || 0,
-                    online: d.online || false,
-                    enabled: d.enabled !== false,
-                    sessionPoints: d.session_points || 0,
-                    betsPlaced: d.bets_placed || 0,
-                    betsWon: d.bets_won || 0,
-                    betsLost: d.bets_lost || 0,
-                    betProfits: d.bet_profits || 0,
-                    betLosses: d.bet_losses || 0,
-                }));
+                if (historyRes.ok) {
+                    const hist = await historyRes.json();
+                    if (hist.bets && hist.bets.length > 0) {
+                        betHistory = hist.bets;
+                    }
+                }
+
+                if (activeRes.ok) {
+                    const active = await activeRes.json();
+                    if (active.predictions) {
+                        activePredictions = active.predictions;
+                    }
+                }
 
                 // Check for new wins/losses
                 const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
@@ -1769,23 +1240,18 @@
                 updateTimestamp();
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('last-update').textContent = 'Erreur connexion';
             }
         }
 
         function updateUI() {
             updateStats();
-            updateStreamersGrid();
-            updateBettingStats();
+            updateActivePredictions();
+            updateBetHistory();
         }
 
         function updateStats() {
             const totalPoints = streamersData.reduce((sum, s) => sum + s.points, 0);
-            const sessionGains = streamersData.reduce((sum, s) => {
-                if (s.sessionPoints !== 0) return sum + s.sessionPoints;
-                return sum + (s.points - s.startingBalance);
-            }, 0);
-            const onlineCount = streamersData.filter(s => s.online).length;
+            const sessionGains = streamersData.reduce((sum, s) => sum + s.sessionPoints, 0);
             const totalBets = streamersData.reduce((sum, s) => sum + s.betsPlaced, 0);
             const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
             const betProfits = streamersData.reduce((sum, s) => sum + s.betProfits, 0);
@@ -1794,89 +1260,114 @@
             const winRate = totalBets > 0 ? ((totalWon / totalBets) * 100).toFixed(0) : 0;
 
             document.getElementById('total-points').textContent = formatNumber(totalPoints);
-            document.getElementById('total-sub').textContent = `sur ${streamersData.length} streamers`;
-
+            
             const sessionEl = document.getElementById('session-gains');
             sessionEl.textContent = formatGain(sessionGains);
             sessionEl.className = `value ${sessionGains >= 0 ? 'positive' : 'negative'}`;
-
+            
+            document.getElementById('win-rate').textContent = winRate + '%';
+            
             const profitEl = document.getElementById('bet-profit');
             profitEl.textContent = formatGain(betProfit);
             profitEl.className = `value ${betProfit >= 0 ? 'positive' : 'negative'}`;
-            document.getElementById('bet-profit-sub').textContent = `+${formatNumber(betProfits)} / -${formatNumber(betLosses)}`;
-
-            document.getElementById('online-count').textContent = onlineCount;
-            document.getElementById('total-streamers').textContent = streamersData.length;
-            document.getElementById('win-rate').textContent = winRate + '%';
-            document.getElementById('total-bets').textContent = totalBets;
+            
+            document.getElementById('total-bets').textContent = `${totalWon}/${totalBets}`;
         }
 
-        function updateStreamersGrid() {
-            const grid = document.getElementById('streamers-grid');
-            const search = document.getElementById('search-input').value.toLowerCase();
+        function updateActivePredictions() {
+            const container = document.getElementById('active-predictions');
+            document.getElementById('active-count').textContent = activePredictions.length;
 
-            let filtered = streamersData;
-            if (currentFilter === 'online') filtered = filtered.filter(s => s.online);
-            else if (currentFilter === 'offline') filtered = filtered.filter(s => !s.online);
-            if (search) filtered = filtered.filter(s => s.name.toLowerCase().includes(search));
-
-            filtered.sort((a, b) => b.points - a.points);
-
-            if (filtered.length === 0) {
-                grid.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>Aucun streamer trouvé</p></div>';
+            if (activePredictions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">🎲</div>
+                        <p>Aucune prédiction active</p>
+                    </div>`;
                 return;
             }
 
-            grid.innerHTML = filtered.map(s => {
-                const sessionClass = s.sessionPoints > 0 ? 'positive' : s.sessionPoints < 0 ? 'negative' : '';
-                const sessionText = s.sessionPoints !== 0 ? formatGain(s.sessionPoints) : '';
-                const disabledClass = s.enabled ? '' : 'disabled';
+            container.innerHTML = activePredictions.map(p => {
+                const hasBet = p.our_bet !== null;
+                const outcomes = p.outcomes || [];
                 
                 return `
-                    <div class="streamer-card ${s.online ? 'online' : ''} ${disabledClass}" onclick="window.open('https://twitch.tv/${s.name}', '_blank')">
-                        <button class="streamer-toggle" onclick="toggleStreamer('${s.name}', event)">
-                            ${s.enabled ? '⏸️ Pause' : '▶️ Activer'}
-                        </button>
-                        <div class="avatar ${s.online ? 'online' : ''}">${s.name.substring(0, 2)}</div>
-                        <div class="streamer-info">
-                            <div class="streamer-name">
-                                ${s.name}
-                                ${s.online ? '<span class="live-badge">Live</span>' : ''}
+                    <div class="prediction-card ${hasBet ? 'has-bet' : ''}">
+                        <div class="prediction-header">
+                            <div>
+                                <div class="prediction-streamer">${p.streamer}</div>
+                                <div class="prediction-title">${p.title}</div>
                             </div>
-                            <div class="streamer-stats">${s.betsWon}/${s.betsPlaced} paris gagnés</div>
+                            ${p.status === 'bet_placed' ? 
+                                '<span class="live-pulse">Pari placé</span>' :
+                                `<div class="prediction-timer ${p.time_remaining < 30 ? 'urgent' : ''}">${p.time_remaining}s</div>`
+                            }
                         </div>
-                        <div class="streamer-points">
-                            <div class="points-value">${formatNumber(s.points)}</div>
-                            ${sessionText ? `<div class="points-session ${sessionClass}">${sessionText}</div>` : ''}
+                        ${outcomes.length > 0 ? `
+                        <div class="prediction-outcomes">
+                            ${outcomes.map((o, i) => `
+                                <div class="outcome ${o.color?.toLowerCase() || (i === 0 ? 'blue' : 'pink')} ${hasBet && p.our_bet.choice === i ? 'selected' : ''}">
+                                    <div class="outcome-title">
+                                        ${hasBet && p.our_bet.choice === i ? '<span class="check">✓</span>' : ''}
+                                        ${o.title}
+                                    </div>
+                                    <div class="outcome-stats">
+                                        <span>${formatNumber(o.users)} votants</span>
+                                        <span class="odds">${o.odds ? o.odds.toFixed(2) + 'x' : '—'}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
                         </div>
+                        ` : ''}
+                        ${hasBet ? `
+                        <div class="our-bet">
+                            <span class="our-bet-label">🎯 Notre pari</span>
+                            <span class="our-bet-amount">${formatNumber(p.our_bet.amount)} pts @ ${p.our_bet.odds?.toFixed(2) || '?'}x</span>
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             }).join('');
         }
 
-        function updateBettingStats() {
-            const totalBets = streamersData.reduce((sum, s) => sum + s.betsPlaced, 0);
-            const totalWon = streamersData.reduce((sum, s) => sum + s.betsWon, 0);
-            const totalLost = streamersData.reduce((sum, s) => sum + s.betsLost, 0);
-            const totalProfits = streamersData.reduce((sum, s) => sum + s.betProfits, 0);
-            const totalLosses = streamersData.reduce((sum, s) => sum + s.betLosses, 0);
+        function updateBetHistory() {
+            const container = document.getElementById('bet-history');
+            document.getElementById('history-count').textContent = betHistory.length;
 
-            document.getElementById('bets-total').textContent = totalBets;
-            document.getElementById('bets-won').textContent = totalWon;
-            document.getElementById('bets-lost').textContent = totalLost;
-            document.getElementById('total-profits').textContent = '+' + formatNumber(totalProfits);
-            document.getElementById('total-losses').textContent = '-' + formatNumber(totalLosses);
-        }
+            if (betHistory.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📊</div>
+                        <p>Aucun pari enregistré</p>
+                    </div>`;
+                return;
+            }
 
-        function setFilter(filter) {
-            currentFilter = filter;
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-            updateStreamersGrid();
-        }
-
-        function filterStreamers() {
-            updateStreamersGrid();
+            container.innerHTML = betHistory.map(bet => {
+                const isWin = bet.result === 'win';
+                const isLose = bet.result === 'lose';
+                const isRefund = bet.result === 'refund';
+                
+                return `
+                    <div class="bet-card ${bet.result}">
+                        <div class="bet-icon ${bet.result}">
+                            ${isWin ? '✅' : isLose ? '❌' : '↩️'}
+                        </div>
+                        <div class="bet-info">
+                            <div class="bet-streamer">${bet.streamer}</div>
+                            <div class="bet-title">${bet.title}</div>
+                            <div class="bet-choice">→ ${bet.choice_title || 'Option ' + ((bet.choice || 0) + 1)}</div>
+                        </div>
+                        <div class="bet-result">
+                            <div class="bet-profit ${isWin ? 'positive' : isLose ? 'negative' : 'neutral'}">
+                                ${isWin ? '+' : isLose ? '-' : ''}${formatNumber(Math.abs(bet.profit || bet.amount || 0))}
+                            </div>
+                            <div class="bet-amount">Mise: ${formatNumber(bet.amount)}</div>
+                            <div class="bet-time">${timeAgo(bet.timestamp)}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateTimestamp() {
@@ -1887,7 +1378,7 @@
         // Initialize
         loadSettings();
         loadData();
-        setInterval(loadData, 30000);
+        setInterval(loadData, 5000); // Refresh every 5s for real-time feel
     </script>
 </body>
 

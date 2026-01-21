@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import time
+from datetime import datetime
 from pathlib import Path
 from threading import Thread, Timer, Lock
 
@@ -24,6 +25,97 @@ logger = logging.getLogger(__name__)
 
 # Lock pour éviter les problèmes de concurrence sur bot_data.json
 _bot_data_lock = Lock()
+
+
+def add_bet_to_history(bet_data: dict):
+    """
+    Ajoute un pari à l'historique dans bot_data.json.
+    
+    Args:
+        bet_data: Dict avec les infos du pari:
+            - streamer: Nom du streamer
+            - title: Titre de la prédiction
+            - choice: Choix fait (index)
+            - choice_title: Titre du choix
+            - amount: Montant misé
+            - odds: Cote du pari
+            - result: 'win', 'lose', 'refund', 'pending'
+            - profit: Profit/perte
+            - timestamp: Horodatage
+    """
+    try:
+        with _bot_data_lock:
+            data_dir = os.getenv("DATA_DIR", ".")
+            bot_data_path = os.path.join(data_dir, "bot_data.json")
+            
+            if os.path.exists(bot_data_path):
+                with open(bot_data_path, 'r') as f:
+                    data = json.load(f)
+            else:
+                data = {'streamers': {}, 'bet_history': [], 'active_predictions': []}
+            
+            if 'bet_history' not in data:
+                data['bet_history'] = []
+            
+            # Ajouter le pari à l'historique
+            data['bet_history'].append(bet_data)
+            
+            # Garder seulement les 100 derniers paris
+            if len(data['bet_history']) > 100:
+                data['bet_history'] = data['bet_history'][-100:]
+            
+            with open(bot_data_path, 'w') as f:
+                json.dump(data, f, indent=2)
+                
+    except Exception as e:
+        logger.debug(f"Erreur ajout historique pari: {e}")
+
+
+def update_active_prediction(prediction_data: dict, remove: bool = False):
+    """
+    Met à jour ou supprime une prédiction active.
+    
+    Args:
+        prediction_data: Dict avec les infos:
+            - event_id: ID de l'événement
+            - streamer: Nom du streamer
+            - title: Titre
+            - outcomes: Liste des choix avec leurs stats
+            - time_remaining: Temps restant
+            - our_bet: Notre pari (si placé)
+        remove: Si True, supprime la prédiction
+    """
+    try:
+        with _bot_data_lock:
+            data_dir = os.getenv("DATA_DIR", ".")
+            bot_data_path = os.path.join(data_dir, "bot_data.json")
+            
+            if os.path.exists(bot_data_path):
+                with open(bot_data_path, 'r') as f:
+                    data = json.load(f)
+            else:
+                data = {'streamers': {}, 'bet_history': [], 'active_predictions': []}
+            
+            if 'active_predictions' not in data:
+                data['active_predictions'] = []
+            
+            event_id = prediction_data.get('event_id')
+            
+            # Supprimer l'ancienne entrée si elle existe
+            data['active_predictions'] = [
+                p for p in data['active_predictions'] 
+                if p.get('event_id') != event_id
+            ]
+            
+            # Ajouter la nouvelle entrée si pas remove
+            if not remove:
+                data['active_predictions'].append(prediction_data)
+            
+            with open(bot_data_path, 'w') as f:
+                json.dump(data, f, indent=2)
+                
+    except Exception as e:
+        logger.debug(f"Erreur mise à jour prédiction active: {e}")
 
 
 def update_bot_data(streamer_name: str, updates: dict):
@@ -445,6 +537,29 @@ class WebSocketsPool:
                                     ):
                                         ws.events_predictions[event_id] = event
                                         
+                                        # === AJOUTER À ACTIVE_PREDICTIONS ===
+                                        outcomes_data = []
+                                        for i, outcome in enumerate(event_dict["outcomes"]):
+                                            outcomes_data.append({
+                                                'title': outcome.get('title', f'Option {i+1}'),
+                                                'color': outcome.get('color', 'BLUE' if i == 0 else 'PINK'),
+                                                'users': outcome.get('total_users', 0),
+                                                'points': outcome.get('total_points', 0),
+                                                'odds': 0
+                                            })
+                                        
+                                        update_active_prediction({
+                                            'event_id': event_id,
+                                            'streamer': streamer.username,
+                                            'title': event_dict["title"],
+                                            'outcomes': outcomes_data,
+                                            'time_remaining': int(event.closing_bet_after(current_tmsp)),
+                                            'total_time': int(event_dict["prediction_window_seconds"]),
+                                            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                            'our_bet': None,
+                                            'status': 'active'
+                                        })
+                                        
                                         # Calculer le délai réel selon delay_mode et delay
                                         start_after = event.closing_bet_after(current_tmsp)
                                         
@@ -593,10 +708,12 @@ class WebSocketsPool:
                                 # === MISE À JOUR BOT_DATA.JSON POUR LES STATS DE PARIS ===
                                 result_type = event_prediction.result["type"]
                                 streamer_username = ws.streamers[streamer_index].username
+                                bet_amount = event_prediction.bet.decision.get("amount", 0)
                                 
+                                # Calculer le profit/perte
+                                profit = 0
                                 if result_type == "WIN":
-                                    # Profit = Gains - Mise
-                                    profit = points["gained"]  # C'est déjà won - placed
+                                    profit = points["gained"]
                                     update_bot_data(streamer_username, {
                                         'bets_won': 1,
                                         'bet_profits': profit if profit > 0 else 0,
@@ -604,13 +721,29 @@ class WebSocketsPool:
                                     logger.info(f"✅ Pari gagné sur {streamer_username}: +{profit} points")
                                     
                                 elif result_type == "LOSE":
-                                    # Perte = Mise placée
                                     loss = points["placed"]
+                                    profit = -loss
                                     update_bot_data(streamer_username, {
                                         'bets_lost': 1,
                                         'bet_losses': loss,
                                     })
                                     logger.info(f"❌ Pari perdu sur {streamer_username}: -{loss} points")
+                                
+                                # === AJOUTER À L'HISTORIQUE DES PARIS ===
+                                add_bet_to_history({
+                                    'streamer': streamer_username,
+                                    'title': event_prediction.title,
+                                    'choice': choice,
+                                    'choice_title': decision.get('title', ''),
+                                    'amount': bet_amount,
+                                    'odds': decision.get('odds', 0),
+                                    'result': result_type.lower(),
+                                    'profit': profit,
+                                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                })
+                                
+                                # Supprimer des prédictions actives
+                                update_active_prediction({'event_id': event_id}, remove=True)
                                 
                                 # Remove duplicate history records from previous message sent in community-points-user-v1
                                 if result_type == "REFUND":
@@ -642,10 +775,31 @@ class WebSocketsPool:
                                 # === ENREGISTRER LE PARI PLACÉ ===
                                 streamer_username = ws.streamers[streamer_index].username
                                 bet_amount = event_prediction.bet.decision.get("amount", 0)
+                                bet_choice = event_prediction.bet.decision.get("choice", 0)
+                                decision = event_prediction.bet.get_decision()
+                                
                                 update_bot_data(streamer_username, {
                                     'bets_placed': 1,
                                 })
                                 logger.info(f"🎲 Pari placé sur {streamer_username}: {bet_amount} points")
+                                
+                                # Mettre à jour la prédiction active avec notre pari
+                                update_active_prediction({
+                                    'event_id': event_id,
+                                    'streamer': streamer_username,
+                                    'title': event_prediction.title,
+                                    'outcomes': [],
+                                    'time_remaining': 0,
+                                    'total_time': event_prediction.prediction_window_seconds,
+                                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                    'our_bet': {
+                                        'choice': bet_choice,
+                                        'choice_title': decision.get('title', ''),
+                                        'amount': bet_amount,
+                                        'odds': decision.get('odds', 0)
+                                    },
+                                    'status': 'bet_placed'
+                                })
                                 
                                 # Analytics switch
                                 if Settings.enable_analytics is True:

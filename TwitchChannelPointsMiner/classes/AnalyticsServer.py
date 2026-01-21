@@ -467,6 +467,45 @@ class AnalyticsServer(Thread):
                 return jsonify({"success": False, "error": "Streamer not found"}), 404
             except Exception as e:
                 return jsonify({"success": False, "error": str(e)}), 500
+        
+        @self.app.route("/api/bets/history", methods=["GET"])
+        def api_bet_history():
+            """Récupère l'historique des paris"""
+            try:
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    bets = data.get("bet_history", [])
+                    # Retourne les 50 derniers paris
+                    return jsonify({"bets": bets[-50:][::-1]})
+                
+                return jsonify({"bets": []})
+            except Exception as e:
+                logger.error(f"Error getting bet history: {e}")
+                return jsonify({"bets": []})
+        
+        @self.app.route("/api/bets/active", methods=["GET"])
+        def api_active_bets():
+            """Récupère les paris en cours"""
+            try:
+                data_dir = os.getenv("DATA_DIR", ".")
+                bot_data_path = os.path.join(data_dir, "bot_data.json")
+                
+                if os.path.exists(bot_data_path):
+                    with open(bot_data_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    active = data.get("active_predictions", [])
+                    return jsonify({"predictions": active})
+                
+                return jsonify({"predictions": []})
+            except Exception as e:
+                logger.error(f"Error getting active bets: {e}")
+                return jsonify({"predictions": []})
 
     def run(self):
         logger.info(
