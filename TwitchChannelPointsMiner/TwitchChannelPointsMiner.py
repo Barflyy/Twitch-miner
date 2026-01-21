@@ -71,6 +71,7 @@ class TwitchChannelPointsMiner:
         "original_streamers",
         "logs_file",
         "queue_listener",
+        "prediction_scanner",
     ]
 
     def __init__(
